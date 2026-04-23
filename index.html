@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IdleFist: The Tower That Punches Back</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="bootError" class="boot-error hidden"></div>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <h1>IdleFist</h1>
+        <p class="subtitle">The Tower That Punches Back</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="pauseBtn">Pause</button>
+        <button id="speedBtn">1x</button>
+        <button id="reverseBtn">Reverse: Off</button>
+        <button id="restartBtn">Restart</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel arena-panel">
+        <div class="arena-header">
+          <div><div class="label">Tower</div><div id="floorLabel" class="big-value">Floor 1</div></div>
+          <div><div class="label">Move</div><div id="moveLabel" class="big-value">Idle</div></div>
+          <div><div class="label">State</div><div id="stateLabel" class="big-value">Fighting</div></div>
+        </div>
+
+        <div class="stage" id="stage">
+          <div id="shakeLayer" class="shake-layer">
+            <svg id="fightSvg" class="fight-svg" viewBox="0 0 960 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Stick figure fight stage">
+              <g id="backgroundLayer"></g>
+              <g id="enemyGroup" class="fighter enemy-fighter"></g>
+              <g id="dudeGroup" class="fighter dude-fighter"></g>
+              <g id="fxLayer"></g>
+            </svg>
+          </div>
+        </div>
+
+        <div class="combat-bars">
+          <div class="meter-card hero-meters">
+            <div class="bar-label">The Dude</div>
+            <div id="heroMeters" class="stacked-meters"></div>
+          </div>
+          <div class="meter-card enemy-meters">
+            <div id="enemyName" class="bar-label">Enemy</div>
+            <div id="enemyMeters" class="stacked-meters"></div>
+          </div>
+        </div>
+
+        <div class="timeline"><div class="label">Recent combat</div><div id="combatLog" class="log"></div></div>
+      </section>
+
+      <aside class="side-column">
+        <section class="panel pad influence-panel">
+          <div class="section-title">Player Influence</div>
+          <div class="controls-grid influence-grid">
+            <button class="influence-btn" data-action="cheer"><b>Cheer</b><span>Small damage boost</span></button>
+            <button class="influence-btn" data-action="heal"><b>Second Wind</b><span>Restore Fortitude</span></button>
+            <button class="influence-btn" data-action="focus"><b>Focus</b><span>Force dodge timing</span></button>
+            <button class="influence-btn" data-action="weaken"><b>Hex</b><span>Weaken enemy</span></button>
+          </div>
+          <div class="toggle-row"><label><input id="autoPowerToggle" type="checkbox" checked /> Auto-pick level powers</label></div>
+          <div class="toggle-row"><label><input id="manualToggle" type="checkbox" /> Manual input / test mode</label></div>
+          <div id="manualControls" class="manual-controls hidden">
+            <div class="section-title">Manual Moves</div>
+            <div class="manual-grid">
+              <button data-move="punch">Punch</button>
+              <button data-move="oneTwo">One-Two</button>
+              <button data-move="kick">Kick</button>
+              <button data-move="sweep">Sweep</button>
+              <button data-move="uppercut">Uppercut</button>
+              <button data-move="jumpKick">Jump Kick</button>
+              <button data-move="jump">Jump</button>
+              <button data-move="duck">Duck</button>
+            </div>
+            <div class="small-note">Manual test mode disables auto attacks. Hotkeys: 1 punch, 2 combo, 3 kick, 4 sweep, 5 uppercut, 6 jump kick, J jump, K duck.</div>
+          </div>
+          <div class="small-note">Hotkeys: Q/W/E/R influence. Uncheck auto-pick to choose level powers by hand.</div>
+        </section>
+
+        <section class="panel pad"><div class="section-title">Build</div><div id="buildSummary" class="build-summary"></div></section>
+        <section class="panel pad"><div class="section-title">Run Stats</div><div id="runStats" class="stats-grid"></div></section>
+      </aside>
+    </main>
+
+    <div id="levelModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card panel pad">
+        <div class="section-title">Level Up</div>
+        <p id="levelText">Choose a new trick or let fate decide.</p>
+        <div id="choiceList" class="choice-list"></div>
+        <div class="modal-actions"><button id="autoPickBtn">Auto Pick</button></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
