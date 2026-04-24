@@ -24,3 +24,5 @@
 @media(max-width:900px){.arena-header{grid-template-columns:1fr 1fr}.fighter-profile-card{grid-column:1 / -1}}
 .dude-fighter .dude-line{stroke-width:var(--profile-line,3.05)}
 .dude-fighter .strike-limb{stroke-width:calc(var(--profile-line,3.05) + .35px)}
+
+.ki-orb{fill:rgba(217,135,255,.34);stroke:#d987ff;stroke-width:2.1;filter:drop-shadow(0 0 6px rgba(217,135,255,.65))}
