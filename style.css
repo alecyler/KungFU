@@ -26,3 +26,7 @@
 .dude-fighter .strike-limb{stroke-width:calc(var(--profile-line,3.05) + .35px)}
 
 .ki-orb{fill:rgba(217,135,255,.34);stroke:#d987ff;stroke-width:2.1;filter:drop-shadow(0 0 6px rgba(217,135,255,.65))}
+
+
+/* v-animation-polish: tiny arcade reads without changing move logic */
+.run-dust{fill:none;stroke:rgba(244,201,93,.45);stroke-width:1.4;stroke-linecap:round;stroke-dasharray:5 7;opacity:.72}.run-dust.soft{opacity:.34;stroke-width:1}.motion-slash{fill:none;stroke:rgba(244,201,93,.58);stroke-width:1.35;stroke-linecap:round;stroke-dasharray:10 8;opacity:.78}.dude-fighter{filter:drop-shadow(0 0 3px rgba(244,201,93,.10))}.enemy-fighter{filter:drop-shadow(0 0 3px rgba(255,93,93,.08))}
