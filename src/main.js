@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const ANIM_BUILD_TAG = 'sprite-sheet-traced-locomotion-v4';
 const showBootError = (err) => { const box=$('bootError'); box.classList.remove('hidden'); box.textContent=`IdleFist boot error:\n${err?.stack||err}`; console.error(err); };
 window.addEventListener('error', e=>showBootError(e.error||e.message));
 window.addEventListener('unhandledrejection', e=>showBootError(e.reason));
@@ -62,7 +63,17 @@ function rollFloorTarget(){return randInt(8,12)}
 function createInitialState(){ const s={running:true,speed:1,awaitingChoice:false,fighterProfile:currentFighterProfile,floor:1,floorKills:0,floorTarget:rollFloorTarget(),bossPending:false,level:1,xp:0,kills:0,totalDamage:0,combo:0,ascensions:0,defeated:false,deathTimer:0,autoRestartDelay:3,stats:{F:1,R:1,S:1,X:profileHasKi()?1:0},resources:{R:100,RMax:100,S:100,SMax:100,X:profileHasKi()?35:0,XMax:profileHasKi()?100:0},build:baseBuildForProfile(),pendingChoices:[],fx:[],shake:0,autoPower:true,manual:false,dude:{hp:90,maxHp:90,x:190,baseX:190,minX:54,maxX:884,profile:currentFighterProfile,facing:1,prevFacing:1,turnLock:0,y:LANE_Y.lower,punchPower:12,kickPower:12,actionInterval:.84,actionCd:.15,stepSpeed:92,timing:.58,jumpWindow:.42,duckWindow:.42,dodgeCost:25,counterBonus:0,comboDamage:0,pose:'idle',poseTime:0,invuln:0,attack:null},enemy:null,enemySlots:[],log:['The Dude enters Floor 1. Clear the wave, then punch the miniboss.']}; s.enemySlots=makeEnemyWave(s.floor,false); s.enemy=s.enemySlots.reduce((best,e)=>Math.abs(e.x-s.dude.x)<Math.abs(best.x-s.dude.x)?e:best,s.enemySlots[0]); return s; }
 let state=createInitialState(), lastTs=performance.now();
 function pushLog(t){state.log.unshift(t);state.log=state.log.slice(0,13)}
+<<<<<<< HEAD
 function setPose(p,time=.28){state.dude.pose=p;state.dude.poseTime=time;state.dude.poseAge=0}
+=======
+function setPose(p,time=.28,blend=.12){
+ const d=state.dude;
+ if(!d)return;
+ if(d.pose!==p){d.poseBlend={from:d.pose||'idle',to:p,age:0,duration:blend,fromAge:d.poseAge||0};}
+ d.pose=p; d.poseTime=time; d.poseAge=0;
+}
+function settlePose(p='idle',blend=.16){const d=state.dude;if(d.pose!==p)setPose(p,.28,blend);}
+>>>>>>> idlefist
 function addFx(kind,x,y){state.fx.push({kind,x,y,t:.22,max:.22})}
 function addTextFx(label,x,y){state.fx.push({kind:'text',label,x,y,t:.55,max:.55})}
 function spendR(a){state.resources.R=Math.max(0,state.resources.R-a)} function spendS(a){state.resources.S=Math.max(0,state.resources.S-a)}
@@ -84,14 +95,14 @@ function getEnemyHurtBox(e){const y1=Math.min(...e.lanes.map(l=>LANE_Y[l]-42)),y
 function getDudeHitBox(move){const d=state.dude,b=HIT_BOXES[move]; const lift=(d.pose==='jump'||d.pose==='jumpKick')?-48:d.pose==='duck'?23:0; const face=d.facing||enemyDir(); return face>=0?{x1:d.x+b.x1,x2:d.x+b.x2,y1:d.y+lift+b.y1,y2:d.y+lift+b.y2,lane:b.lane}:{x1:d.x-b.x2,x2:d.x-b.x1,y1:d.y+lift+b.y1,y2:d.y+lift+b.y2,lane:b.lane};}
 const boxesOverlap=(a,b)=>a.x1<=b.x2&&a.x2>=b.x1&&a.y1<=b.y2&&a.y2>=b.y1;
 function attackBaseDamage(move){const d=state.dude; if(move==='punch')return d.punchPower; if(move==='oneTwo')return Math.max(6,Math.floor(d.punchPower*.72)); if(move==='kick')return d.kickPower+2; if(move==='sweep')return Math.max(5,Math.floor(d.kickPower*.72)); if(move==='uppercut')return Math.floor((d.punchPower+d.kickPower)/2)+5; if(move==='jumpKick')return Math.floor((d.punchPower+d.kickPower)/2)+9; if(move==='hadouken')return 18+state.stats.X*4; return 8;}
-function processDudeAttack(dt){const d=state.dude,e=state.enemy,a=d.attack;if(!a||!e)return; a.t+=dt; for(const impact of a.impacts){ if(!impact.done&&a.t>=impact.t){impact.done=true; const hitBox=getDudeHitBox(a.move),hurtBox=getEnemyHurtBox(e),laneOk=e.lanes.includes(hitBox.lane); if(a.move==='oneTwo'&&impact.t>.2){hitBox.x1+=14;hitBox.x2+=18;} a.hitBox=hitBox; a.showBox=.13; if(laneOk&&boxesOverlap(hitBox,hurtBox)){damageEnemy(randInt(attackBaseDamage(a.move)-2,attackBaseDamage(a.move)+4)+Math.floor((a.move==='hadouken'?state.stats.X:state.stats.F)*1.5),a.label); if(profileHasKi()&&a.move!=='hadouken')state.resources.X=Math.min(state.resources.XMax,state.resources.X+3);}  else{state.combo=0;pushLog(`${a.label} whiffs${laneOk?'':' the wrong lane'}.`);addTextFx('whiff',d.x+82,d.y-94);}} } if(a.showBox)a.showBox=Math.max(0,a.showBox-dt); if(a.t>=a.duration){d.attack=null;if(d.pose===a.move)d.pose='idle';}}
+function processDudeAttack(dt){const d=state.dude,e=state.enemy,a=d.attack;if(!a||!e)return; a.t+=dt; for(const impact of a.impacts){ if(!impact.done&&a.t>=impact.t){impact.done=true; const hitBox=getDudeHitBox(a.move),hurtBox=getEnemyHurtBox(e),laneOk=e.lanes.includes(hitBox.lane); if(a.move==='oneTwo'&&impact.t>.2){hitBox.x1+=14;hitBox.x2+=18;} a.hitBox=hitBox; a.showBox=.13; if(laneOk&&boxesOverlap(hitBox,hurtBox)){damageEnemy(randInt(attackBaseDamage(a.move)-2,attackBaseDamage(a.move)+4)+Math.floor((a.move==='hadouken'?state.stats.X:state.stats.F)*1.5),a.label); if(profileHasKi()&&a.move!=='hadouken')state.resources.X=Math.min(state.resources.XMax,state.resources.X+3);}  else{state.combo=0;pushLog(`${a.label} whiffs${laneOk?'':' the wrong lane'}.`);addTextFx('whiff',d.x+82,d.y-94);}} } if(a.showBox)a.showBox=Math.max(0,a.showBox-dt); if(a.t>=a.duration){d.attack=null;if(d.pose===a.move)settlePose('idle',.16);}}
 function processEnemyAttack(dt,target=state.enemy){const e=target,d=state.dude,a=e?.attack;if(!a)return; a.t+=dt; if(!a.done&&a.t>=a.impact){a.done=true; const dist=Math.abs(e.x-d.x);if(dist>e.range+22)return; const blocked=a.lane==='mid'&&d.pose==='block'; const dodged=(a.lane==='lower'&&d.pose==='jump')||(a.lane==='mid'&&d.pose==='duck')||d.invuln>0||blocked; if(dodged){addFx(blocked?'block':'dodge',d.x,d.y-74);addTextFx(blocked?'BLOCK':'DODGE',d.x-20,d.y-112);pushLog(blocked?`The Dude blocks ${e.name}'s mid attack.`:`The Dude dodges ${e.name}'s ${a.lane} attack.`);return;} damageDude(randInt(Math.max(1,e.power-2),e.power+2),e.name);} if(a.t>=a.duration)e.attack=null;}
 function update(dt){
  const d=state.dude;
  state.fx.forEach(f=>f.t-=dt); state.fx=state.fx.filter(f=>f.t>0);
  state.shake=Math.max(0,(state.shake||0)-dt);
  if(state.defeated){
-  state.deathTimer+=dt; d.pose='dead'; d.poseTime=999;
+  state.deathTimer+=dt; if(d.pose!=='dead')setPose('dead',999,.08); d.poseTime=999;
   if(!state.manual&&state.deathTimer>=state.autoRestartDelay){
    const oldAsc=state.ascensions; state=createInitialState(); state.ascensions=oldAsc;
    pushLog('The Dude shakes it off and starts over.');
@@ -105,16 +116,20 @@ function update(dt){
  if(!e)return;
  setFacing(enemyDir());
  d.turnLock=Math.max(0,(d.turnLock||0)-dt);
+<<<<<<< HEAD
  d.poseTime=Math.max(0,d.poseTime-dt); d.poseAge=(d.poseAge||0)+dt;
+=======
+ d.poseTime=Math.max(0,d.poseTime-dt); d.poseAge=(d.poseAge||0)+dt; if(d.poseBlend){d.poseBlend.age+=dt; if(d.poseBlend.age>=d.poseBlend.duration)d.poseBlend=null;}
+>>>>>>> idlefist
  d.invuln=Math.max(0,d.invuln-dt);
  for(const foe of aliveEnemies()){foe.hitFlash=Math.max(0,foe.hitFlash-dt);foe.stagger=Math.max(0,foe.stagger-dt);}
  state.resources.R=Math.min(state.resources.RMax,state.resources.R+(12+state.stats.R*2)*dt);
  state.resources.S=Math.min(state.resources.SMax,state.resources.S+(8+state.stats.S*1.5)*dt);
  if(profileHasKi())state.resources.X=Math.min(state.resources.XMax,state.resources.X+(3+state.stats.X)*dt);
  processDudeAttack(dt);
- if(d.poseTime<=0&&!['idle','run','turn'].includes(d.pose)&&!d.attack)d.pose='idle';
+ if(d.poseTime<=0&&!['idle','run','turn'].includes(d.pose)&&!d.attack)settlePose('idle');
  if(!state.running){
-  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)d.pose='idle';
+  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)settlePose('idle');
   return;
  }
  const desired=e.attack?108:132;
@@ -145,12 +160,12 @@ function update(dt){
   const dudeStep=(profile.walkSpeed||100)*dt;
   if(!d.attack && d.turnLock<=0){
    d.x=clamp(d.x+dir*dudeStep,d.minX,d.maxX);
-   if(!['jump','duck','block','hurt','dead','turn'].includes(d.pose))d.pose='run';
+   if(!['jump','duck','block','hurt','dead','turn'].includes(d.pose))settlePose('run',.14);
   }
  } else {
   const overlap=desired-gap;
   if(overlap>0 && !d.attack)d.x=clamp(d.x-dir*overlap*.045,d.minX,d.maxX);
-  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)d.pose='idle';
+  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)settlePose('idle');
  }
  d.actionCd-=dt;
  if(!state.manual&&d.actionCd<=0&&!d.attack){
@@ -161,6 +176,7 @@ function update(dt){
 function animProgress(){const a=state.dude.attack;if(a)return clamp(a.t/a.duration,0,1);const d=state.dude;const total=(d.poseAge||0)+(d.poseTime||0);return total>0?clamp((d.poseAge||0)/total,0,1):0;}
 function phase(){const a=state.dude.attack;if(!a)return 0;if(a.move==='oneTwo'){const second=a.t>=.28,start=second?.28:0,impact=second?.40:.15,end=second?a.duration:.28;if(a.t<=impact)return clamp((a.t-start)/(impact-start),0,1);return 1-clamp((a.t-impact)/(end-impact),0,1)*.35;}const first=a.impact||.18;if(a.t<=first)return a.t/first;return 1-((a.t-first)/(a.duration-first))*.35;}
 function limbs(g,pts){for(const p of pts)g.append(line(...p));}
+<<<<<<< HEAD
 const DUDE_MODEL={headR:11,upperArm:27,foreArm:34,upperLeg:34,lowerLeg:43,jointR:2.7};
 const pt=(x,y,deg,len)=>[x+Math.cos(deg*Math.PI/180)*len,y+Math.sin(deg*Math.PI/180)*len];
 function chain(g,x,y,a1,l1,a2,l2,cls='dude-line',endCls='dude-line') { const [ex,ey]=pt(x,y,a1,l1), [hx,hy]=pt(ex,ey,a2,l2); g.append(line(x,y,ex,ey,cls)); g.append(line(ex,ey,hx,hy,endCls)); g.append(circle(ex,ey,DUDE_MODEL.jointR,'dude-joint')); g.append(circle(hx,hy,DUDE_MODEL.jointR*.72,'end-cap')); return [hx,hy]; }
@@ -233,6 +249,190 @@ function drawDude(){const d=state.dude,g=UI.dude;g.innerHTML='';const profile=FI
   g.append(el('path',{d:`M${42+sw*10} ${sweepY-10} C ${72+sw*20} ${sweepY-18}, ${96+sw*30} ${sweepY-8}, ${116+sw*38} ${sweepY-20}`,class:'motion-slash'}));
  }
  const atk=d.attack;if(atk?.showBox&&atk.hitBox){const hb=atk.hitBox;g.append(el('rect',{x:(d.facing||1)>=0?hb.x1-(d.x+lunge+hurt):d.x-(hb.x2)-lunge-hurt,y:hb.y1-y,width:hb.x2-hb.x1,height:hb.y2-hb.y1,class:'hitbox'}));} /* Fighter name label hidden: HUD already identifies the player, and SVG text mirrors when flipped. */}
+=======
+const DUDE_MODELS={
+ default:{headR:11,neck:-70,hip:-12,shoulderW:10,hipW:8,upperArm:27,foreArm:30,wrist:7,upperLeg:34,lowerLeg:38,foot:12,jointR:2.7},
+ alleyBrawler:{
+  // ANIMATION PATCH NOTE FOR FUTURE ME:
+  // The visible in-game dude is driven from this exact object via poseAngles() -> drawDude() -> drawHumanPuppet().
+  // Earlier patches failed because they edited/imagined "walk" data, but the live locomotion pose is named `run`.
+  // Angle convention for this renderer: 0 = right, 90 = down, 180 = left, negative = up.
+  // Therefore arms flail over the head when upper-arm angles go negative. Keep idle/run/turn upper arms positive.
+  // These keyframes are traced from the labelled movement sheet the user sent:
+  //   Idle, Turn, Crouch, Crouch Turn, Forward Walk Loop, Backup Walk Loop, Forward Flip, Vertical Jump.
+  // The game currently calls idle/run/turn/duck/jump/dead, so those are the relevant sheet-backed loops here.
+  idle:[
+   // Sheet row: Idle. Compact side-on guard, small breath/weight shift.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.25,la:[108,-20],ra:[38,-22],ll:[106,76],rl:[64,118],lean:10,hip:-2,yShift:-1},
+   {t:.50,la:[102,-26],ra:[44,-16],ll:[110,70],rl:[60,124],lean:8,hip:-5,yShift:0},
+   {t:.75,la:[110,-18],ra:[40,-20],ll:[104,78],rl:[66,116],lean:10,hip:-1,yShift:-1},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  run:[
+   // Sheet row: forward walk loop. Six-frame brawler walk: contact -> settle -> passing -> contact -> settle -> recover.
+   // Hands stay around chest/waist; legs do the readable motion.
+   {t:0.00,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:11,hip:-5,yShift:0},
+   {t:0.17,la:[112,-18],ra:[36,-24],ll:[94,88],rl:[78,112],lean:12,hip:-1,yShift:-1},
+   {t:0.34,la:[116,-14],ra:[34,-28],ll:[116,58],rl:[58,138],lean:10,hip:4,yShift:1},
+   {t:0.50,la:[104,-24],ra:[42,-18],ll:[104,70],rl:[80,112],lean:12,hip:2,yShift:0},
+   {t:0.67,la:[96,-30],ra:[50,-12],ll:[78,112],rl:[96,86],lean:11,hip:-4,yShift:1},
+   {t:0.84,la:[100,-26],ra:[46,-16],ll:[58,138],rl:[116,58],lean:10,hip:-6,yShift:0},
+   {t:1.00,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:11,hip:-5,yShift:0}
+  ],
+  backRun:[
+   // Sheet row: backup walk loop. Not currently called by the AI, but kept here for when retreat/backstep is added.
+   {t:0.00,la:[96,-30],ra:[50,-12],ll:[104,70],rl:[80,112],lean:4,hip:2,yShift:0},
+   {t:0.20,la:[100,-26],ra:[46,-16],ll:[92,92],rl:[100,78],lean:3,hip:0,yShift:-1},
+   {t:0.40,la:[110,-18],ra:[38,-24],ll:[70,122],rl:[114,62],lean:2,hip:-4,yShift:1},
+   {t:0.60,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:3,hip:-2,yShift:0},
+   {t:0.80,la:[98,-28],ra:[48,-14],ll:[112,62],rl:[70,122],lean:4,hip:4,yShift:1},
+   {t:1.00,la:[96,-30],ra:[50,-12],ll:[104,70],rl:[80,112],lean:4,hip:2,yShift:0}
+  ],
+  turn:[
+   // Sheet row: Turn. Pivot through a guarded crouch instead of whipping arms above the head.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.22,la:[88,-34],ra:[58,-8],ll:[124,56],rl:[48,146],lean:18,hip:16,yShift:7},
+   {t:.50,la:[76,-38],ra:[70,-4],ll:[116,78],rl:[66,128],lean:4,hip:24,yShift:10},
+   {t:.78,la:[94,-30],ra:[52,-12],ll:[102,82],rl:[70,116],lean:12,hip:8,yShift:4},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  punch:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[118,-14],ra:[34,-28],ll:[104,76],rl:[58,128],lean:17,hip:6},{t:.34,la:[126,-8],ra:[-18,4],ll:[100,78],rl:[52,134],lean:27,hip:15},{t:.48,la:[114,-16],ra:[8,12],ll:[104,76],rl:[58,128],lean:20,hip:9},{t:.70,la:[108,-20],ra:[34,-18],ll:[106,74],rl:[60,124],lean:12,hip:0},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  oneTwo:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.12,la:[122,-10],ra:[34,-28],ll:[104,76],rl:[58,128],lean:17,hip:7},{t:.24,la:[130,-6],ra:[-16,4],ll:[100,78],rl:[52,134],lean:26,hip:15},{t:.36,la:[112,-18],ra:[20,-8],ll:[106,74],rl:[60,124],lean:12,hip:2},{t:.48,la:[-10,2],ra:[126,-8],ll:[78,112],rl:[38,150],lean:34,hip:28,yShift:2},{t:.62,la:[-24,-4],ra:[132,-6],ll:[74,118],rl:[34,154],lean:36,hip:34,yShift:3},{t:.82,la:[84,-34],ra:[92,-28],ll:[102,80],rl:[54,134],lean:18,hip:12},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  kick:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[116,-16],ra:[36,-24],ll:[110,78],rl:[38,68],lean:-4,hip:8},{t:.38,la:[124,-10],ra:[34,-28],ll:[126,92],rl:[-20,-6],lean:-21,hip:18,yShift:-2},{t:.56,la:[116,-16],ra:[36,-24],ll:[124,88],rl:[-18,-8],lean:-15,hip:14},{t:.78,la:[106,-22],ra:[42,-18],ll:[112,78],rl:[34,70],lean:-2,hip:6},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  sweep:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[96,-30],ra:[52,-12],ll:[138,44],rl:[42,148],lean:24,hip:22,yShift:15},{t:.38,la:[72,-42],ra:[84,-28],ll:[158,92],rl:[-2,0],lean:35,hip:30,yShift:20},{t:.58,la:[66,-46],ra:[92,-32],ll:[162,88],rl:[8,2],lean:30,hip:25,yShift:18},{t:.80,la:[96,-30],ra:[54,-14],ll:[130,58],rl:[42,142],lean:18,hip:12,yShift:8},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  uppercut:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[116,-16],ra:[54,-8],ll:[136,48],rl:[40,148],lean:28,hip:18,yShift:10},{t:.38,la:[110,-18],ra:[-92,-128],ll:[116,66],rl:[58,122],lean:-18,hip:4,yShift:-8},{t:.52,la:[106,-22],ra:[-86,-118],ll:[106,80],rl:[68,110],lean:-24,hip:0,yShift:-12},{t:.76,la:[104,-24],ra:[46,-16],ll:[112,70],rl:[56,126],lean:2,hip:0},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  jumpKick:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[112,-18],ra:[34,-28],ll:[144,170],rl:[26,18],lean:3,hip:8,yShift:-18},{t:.42,la:[124,-10],ra:[30,-32],ll:[164,184],rl:[-22,-8],lean:8,hip:18,yShift:-48},{t:.62,la:[118,-14],ra:[34,-28],ll:[152,176],rl:[-18,-8],lean:4,hip:14,yShift:-42},{t:.82,la:[106,-22],ra:[42,-18],ll:[132,150],rl:[34,32],lean:2,hip:4,yShift:-18},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  hadouken:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[88,-34],ra:[56,-10],ll:[126,66],rl:[48,136],lean:23,hip:18},{t:.38,la:[50,-10],ra:[38,-14],ll:[116,70],rl:[40,140],lean:31,hip:24},{t:.56,la:[-18,-4],ra:[-18,-4],ll:[112,68],rl:[40,142],lean:32,hip:28},{t:.76,la:[-20,-10],ra:[-20,-10],ll:[112,68],rl:[40,142],lean:24,hip:18},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  jump:[
+   // Sheet row: vertical jump.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.20,la:[92,-34],ra:[56,-10],ll:[132,44],rl:[44,148],lean:18,hip:14,yShift:14},
+   {t:.45,la:[112,-18],ra:[36,-24],ll:[148,164],rl:[36,24],lean:4,hip:8,yShift:-46},
+   {t:.70,la:[116,-14],ra:[34,-28],ll:[138,156],rl:[46,34],lean:2,hip:4,yShift:-38},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  duck:[
+   // Sheet row: crouch.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.25,la:[96,-30],ra:[52,-12],ll:[132,46],rl:[46,148],lean:22,hip:18,yShift:18},
+   {t:.55,la:[88,-34],ra:[58,-8],ll:[146,38],rl:[38,156],lean:26,hip:24,yShift:24},
+   {t:1,la:[88,-34],ra:[58,-8],ll:[146,38],rl:[38,156],lean:26,hip:24,yShift:24}
+  ],
+  block:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.2,la:[78,-20],ra:[76,-18],ll:[108,72],rl:[62,122],lean:8,hip:4},{t:1,la:[78,-20],ra:[76,-18],ll:[108,72],rl:[62,122],lean:8,hip:4}],
+  hurt:[{t:0,la:[150,152],ra:[12,20],ll:[124,86],rl:[76,120],lean:-20,hip:-8,yShift:2},{t:.55,la:[136,146],ra:[22,28],ll:[116,82],rl:[72,116],lean:-10,hip:-4},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  dead:[
+   // Sheet-inspired "on fall": buckle, sit/back, then settle flat. Non-looping because defeatDude sets pose='dead'.
+   {t:0,la:[150,152],ra:[12,22],ll:[108,72],rl:[62,122],lean:-18,hip:-8,yShift:0},
+   {t:.25,la:[138,146],ra:[24,34],ll:[132,82],rl:[72,118],lean:-34,hip:-18,yShift:9},
+   {t:.55,la:[126,154],ra:[32,14],ll:[154,100],rl:[28,166],lean:-54,hip:-34,yShift:21},
+   {t:1,la:[168,180],ra:[18,4],ll:[12,2],rl:[-12,-24],lean:-64,hip:-42,yShift:30}
+  ],
+ }};
+
+// Renderer/pose bridge notes:
+// - Live animation state names are `idle`, `run`, `turn`, `duck`, `jump`, `dead`.
+// - `run` is the forward walk loop. Editing a separate `walk` key will not affect gameplay.
+// - The puppet draw path is: POSE_LIBRARY -> poseAngles() -> drawDude() -> drawHumanPuppet().
+// - Angle convention: 0 = right, 90 = down, 180 = left, negative = up.
+// - Keep Alley Brawler idle/run upper-arm angles positive to prevent the old overhead arm-flail.
+const POSE_LIBRARY={
+ default:DUDE_MODELS.alleyBrawler,
+ alleyBrawler:DUDE_MODELS.alleyBrawler
+};
+let DUDE_MODEL=null;
+function resolveDudeModel(profile){
+ const base=DUDE_MODELS.default||{};
+ const overlay=DUDE_MODELS[profile]||{};
+ return {...base,...overlay};
+}
+function polarPoint(origin,angleDeg,len){
+ const rad=angleDeg*Math.PI/180;
+ return {x:origin.x+Math.cos(rad)*len,y:origin.y+Math.sin(rad)*len};
+}
+function svgLineBetween(a,b,cls){return line(a.x,a.y,b.x,b.y,cls);}
+function drawHumanPuppet(g,a,{bob=0,pose='idle',progress=0}={}){
+ const m=DUDE_MODEL||resolveDudeModel(currentFighterProfile);
+ const torsoTop={x:(a.lean||0)*.18,y:(m.neck||-70)+bob};
+ const hip={x:(a.hip||0)*.22,y:(m.hip||-12)+bob};
+ const shoulder={x:torsoTop.x,y:torsoTop.y+15};
+ const lw=(m.shoulderW||10), hw=(m.hipW||8);
+ const lShoulder={x:shoulder.x-lw,y:shoulder.y};
+ const rShoulder={x:shoulder.x+lw,y:shoulder.y};
+ const lHip={x:hip.x-hw,y:hip.y};
+ const rHip={x:hip.x+hw,y:hip.y};
+ const lElbow=polarPoint(lShoulder,a.la?.[0]??95,m.upperArm||27);
+ const lHand=polarPoint(lElbow,a.la?.[1]??35,m.foreArm||30);
+ const rElbow=polarPoint(rShoulder,a.ra?.[0]??55,m.upperArm||27);
+ const rHand=polarPoint(rElbow,a.ra?.[1]??-10,m.foreArm||30);
+ const lKnee=polarPoint(lHip,a.ll?.[0]??105,m.upperLeg||34);
+ const lFoot=polarPoint(lKnee,a.ll?.[1]??75,m.lowerLeg||38);
+ const rKnee=polarPoint(rHip,a.rl?.[0]??65,m.upperLeg||34);
+ const rFoot=polarPoint(rKnee,a.rl?.[1]??120,m.lowerLeg||38);
+ const strikeArm=(['punch','oneTwo','uppercut','hadouken'].includes(pose)&&progress>.18&&progress<.70);
+ const strikeLeg=(['kick','sweep','jumpKick'].includes(pose)&&progress>.22&&progress<.72);
+ // Back-side limbs first, torso next, front-side limbs last. This gives the side-on sprite-sheet read.
+ g.append(svgLineBetween(lHip,lKnee,'pants-limb'));
+ g.append(svgLineBetween(lKnee,lFoot,strikeLeg?'strike-limb pants-limb':'pants-limb'));
+ g.append(svgLineBetween(lShoulder,lElbow,'skin-limb'));
+ g.append(svgLineBetween(lElbow,lHand,strikeArm?'strike-limb skin-limb':'skin-limb'));
+ const torsoPath=`M ${lShoulder.x-7} ${lShoulder.y-5} C ${lShoulder.x-13} ${lShoulder.y+22}, ${lHip.x-10} ${lHip.y-3}, ${lHip.x-7} ${lHip.y+10} L ${rHip.x+9} ${rHip.y+10} C ${rHip.x+10} ${rHip.y-4}, ${rShoulder.x+13} ${rShoulder.y+21}, ${rShoulder.x+7} ${rShoulder.y-5} Z`;
+ g.append(el('path',{d:torsoPath,class:'torso-fill'}));
+ g.append(line(lShoulder.x-2,lShoulder.y+2,rHip.x+4,rHip.y+8,'gi-fold'));
+ g.append(line(lHip.x-12,lHip.y+7,rHip.x+13,rHip.y+7,'belt-line'));
+ g.append(svgLineBetween(rHip,rKnee,'pants-limb'));
+ g.append(svgLineBetween(rKnee,rFoot,strikeLeg?'strike-limb pants-limb':'pants-limb'));
+ g.append(svgLineBetween(rShoulder,rElbow,'skin-limb'));
+ g.append(svgLineBetween(rElbow,rHand,strikeArm?'strike-limb skin-limb':'skin-limb'));
+ g.append(svgLineBetween(lFoot,{x:lFoot.x-((pose==='run')?10:7),y:lFoot.y+3},'foot-limb'));
+ g.append(svgLineBetween(rFoot,{x:rFoot.x+((pose==='run')?10:7),y:rFoot.y+3},'foot-limb'));
+ const gloveR=(pose==='punch'||pose==='oneTwo'||pose==='hadouken')?5.9:5.2;
+ g.append(circle(lHand.x,lHand.y,gloveR,strikeArm?'strike-glove':'glove-fill'));
+ g.append(circle(rHand.x,rHand.y,gloveR,strikeArm?'strike-glove':'glove-fill'));
+ for(const pt of [lElbow,rElbow,lKnee,rKnee])g.append(circle(pt.x,pt.y,m.jointR||2.7,'joint-shadow'));
+ const head={x:torsoTop.x+(a.lean||0)*.12,y:(m.neck||-70)-18+bob};
+ g.append(circle(head.x,head.y,m.headR||11,'head-fill'));
+ g.append(el('path',{d:`M ${head.x-8} ${head.y-11} C ${head.x-3} ${head.y-18}, ${head.x+9} ${head.y-15}, ${head.x+12} ${head.y-9}`,class:'hair-line'}));
+}
+
+const poseFrame=(profile,pose)=>POSE_LIBRARY[profile]?.[pose]||POSE_LIBRARY[profile]?.idle||POSE_LIBRARY.default.idle;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=(t)=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+function mixPose(a,b,t){const e=ease(clamp(t,0,1));const out={};for(const k of ['lean','hip','yShift'])out[k]=lerp(a[k]||0,b[k]||0,e);for(const limb of ['la','ra','ll','rl'])out[limb]=[lerp(a[limb][0],b[limb][0],e),lerp(a[limb][1],b[limb][1],e)];return out;}
+function keyframedPose(profile,pose,p){const frames=poseFrame(profile,pose);if(frames.length===1)return frames[0];const t=clamp(p,0,1);for(let i=0;i<frames.length-1;i++){const a=frames[i],b=frames[i+1];if(t>=a.t&&t<=b.t)return mixPose(a,b,(t-a.t)/Math.max(.001,b.t-a.t));}return frames[frames.length-1];}
+function poseProgressAt(pose,age){if(pose==='idle')return ((age||0)*1.35)%1;if(pose==='run')return ((age||0)*4.2)%1;if(pose==='turn')return animProgress();return animProgress();}
+function loopProgress(pose){const d=state.dude;if(d.attack)return animProgress();return poseProgressAt(pose,d.poseAge||0);}
+function poseAngles(pose,p,t){
+ const profile=currentFighterProfile==='alleyBrawler'?'alleyBrawler':'default';
+ const poseName=POSE_LIBRARY[profile]?.[pose]?pose:'idle';
+ const current=keyframedPose(profile,poseName,loopProgress(pose));
+ const blend=state.dude.poseBlend;
+ if(blend&&blend.duration>0&&POSE_LIBRARY[profile]?.[blend.from]){
+  const from=keyframedPose(profile,blend.from,poseProgressAt(blend.from,blend.fromAge+(blend.age||0)));
+  return sanitizeLocomotionPose(poseName,mixPose(from,current,(blend.age||0)/blend.duration));
+ }
+ return sanitizeLocomotionPose(poseName,current);
+}
+function sanitizeLocomotionPose(poseName,a){
+ if(currentFighterProfile!=='alleyBrawler'||!['idle','run'].includes(poseName)) return a;
+ const safe={...a,la:[...a.la],ra:[...a.ra],ll:[...a.ll],rl:[...a.rl]};
+ // Runtime guardrail: these are permissive enough for the traced sheet poses, but prevent the old overhead windmill bug.
+ safe.la[0]=clamp(safe.la[0],70,135);
+ safe.ra[0]=clamp(safe.ra[0],24,70);
+ safe.la[1]=clamp(safe.la[1],-46,12);
+ safe.ra[1]=clamp(safe.ra[1],-42,12);
+ return safe;
+}
+function drawDude(){const d=state.dude,g=UI.dude;g.innerHTML='';const profile=FIGHTER_PROFILES[currentFighterProfile]||FIGHTER_PROFILES.default;DUDE_MODEL=resolveDudeModel(currentFighterProfile);DUDE_MODEL.jointR=profile.joint;g.style.setProperty('--profile-line',profile.line);g.setAttribute('class','fighter dude-fighter human-puppet');const now=performance.now();let y=d.y,bob=(d.pose==='run'||d.pose==='idle')?Math.sin(now/(d.pose==='run'?92:430))*(d.pose==='run'?2.5:1.6):0;if(d.pose==='jump'||d.pose==='jumpKick')y-=48;if(d.pose==='duck')y+=23;const p=animProgress(),strike=phase(),oneTwoSecond=d.attack?.move==='oneTwo'&&d.attack.t>.30,lunge=d.pose==='oneTwo'?(oneTwoSecond?(currentFighterProfile==='alleyBrawler'?34:22):11)*strike:(['punch','kick','sweep','uppercut','jumpKick','hadouken'].includes(d.pose)?13*strike:0),hurt=d.pose==='hurt'?-8:0;const face=d.facing||1;
+ if(d.pose==='dead'){const t=clamp(state.deathTimer/0.75,0,1),rot=82*t,a=poseAngles('dead',t,now);g.setAttribute('transform',`translate(${d.x-8} ${y-8+20*t+(a.yShift||0)}) scale(${d.facing||1} 1) rotate(${rot})`);g.setAttribute('opacity',String(1-.18*t));drawHumanPuppet(g,a,{bob:0,pose:'dead',progress:t});g.append(el('path',{d:'M-34 32 C-8 42 44 42 70 32',class:'run-dust soft'}));return;}
+ g.setAttribute('opacity','1');const a=poseAngles(d.pose,p,now);y+=(a.yShift||0);g.setAttribute('transform',`translate(${d.x+face*(lunge+hurt)} ${y}) scale(${face} 1)`);drawHumanPuppet(g,a,{bob,pose:d.pose,progress:p});
+ if(d.pose==='block')g.append(el('path',{d:'M24 -78 C38 -68 39 -45 24 -34 C8 -45 9 -68 24 -78',class:'block-guard'}));
+ if(d.pose==='hadouken')g.append(el('circle',{cx:86,cy:-63,r:10+8*p,class:'ki-orb'}));
+ if(d.pose==='sweep')g.append(el('path',{d:'M18 34 C42 52 76 50 108 34',class:'sweep-arc'}));
+ if(d.pose==='run'){const footP=loopProgress('run');const dustY=34+bob;g.append(el('path',{d:`M${-44-12*Math.sin(footP*Math.PI*2)} ${dustY} C -68 ${dustY+4}, -78 ${dustY+2}, -92 ${dustY+7}`,class:'run-dust'}));g.append(el('path',{d:`M${-24-8*Math.cos(footP*Math.PI*2)} ${dustY+10} C -46 ${dustY+13}, -58 ${dustY+12}, -72 ${dustY+16}`,class:'run-dust soft'}));}
+ const atk=d.attack;if(atk?.showBox&&atk.hitBox){const hb=atk.hitBox;g.append(el('rect',{x:(d.facing||1)>=0?hb.x1-(d.x+lunge+hurt):d.x-(hb.x2)-lunge-hurt,y:hb.y1-y,width:hb.x2-hb.x1,height:hb.y2-hb.y1,class:'hitbox'}));}
+}
+>>>>>>> idlefist
 function drawEnemy(){const root=UI.enemy;root.innerHTML='';const foes=aliveEnemies();if(!foes.length)return;for(const e of foes){const g=el('g',{});root.append(g);const recoil=e.stagger>0?10*Math.sin(e.stagger*28):0;const eFace=e.x>=state.dude.x?1:-1;g.setAttribute('transform',`translate(${e.x+eFace*recoil} ${e.y}) scale(${eFace} 1)`);g.setAttribute('opacity',e.hitFlash>0?'.5':'1');g.setAttribute('class',`fighter enemy-fighter ${e.boss?'boss':''}`);const wind=e.attack?clamp(e.attack.t/e.attack.impact,0,1):0;if(e.kind==='drone'){g.append(el('rect',{x:-24,y:-13,width:48,height:26,rx:4,class:'enemy-fill'}));g.append(circle(-42,-18,8,'enemy-line'));g.append(circle(42,-18,8,'enemy-line'));if(e.attack){g.append(line(-20,0,-86+16*wind,6,'enemy-line attack-line'));g.append(line(20,0,-86+16*wind,6,'enemy-line attack-line'))}} if(e.kind==='crawler'){g.append(circle(0,-22,e.boss?23:16,'enemy-fill'));g.append(line(-18,-6,-50,20,'enemy-line'));g.append(line(0,-4,-18,24,'enemy-line'));g.append(line(18,-6,44,20,'enemy-line'));if(e.attack)g.append(line(-18,-8,-88+24*wind,-22,'enemy-line attack-line'));} if(e.kind==='dummy'){const top=-70,bottom=e.lanes.includes('lower')?38:8;g.append(circle(0,top,14,'enemy-fill'));g.append(line(0,top+14,0,bottom-14,'enemy-line'));g.append(line(0,-42,-30,-15,'enemy-line'));g.append(line(0,-42,30,-15,'enemy-line'));g.append(line(0,bottom-14,-28,bottom+12,'enemy-line'));g.append(line(0,bottom-14,28,bottom+12,'enemy-line'));if(e.attack)g.append(line(-8,-38,-86+20*wind,-42,'enemy-line attack-line'));} if(e.kind==='turret'){g.append(el('rect',{x:-34,y:-42,width:68,height:60,rx:8,class:'enemy-fill'}));g.append(circle(-20,28,12,'enemy-line'));g.append(circle(20,28,12,'enemy-line'));if(e.attack)g.append(line(-30,-16,-96+24*wind,44,'enemy-line attack-line'));} /* Enemy SVG label hidden: HUD/enemy meters already identify the target, and mirrored text looked silly on left attacks. */}}
 function drawFx(){UI.fx.innerHTML='';for(const f of state.fx){const k=f.t/f.max;if(f.kind==='text'){const n=text(f.x,f.y-(1-k)*22,String(f.label),'damage-text');n.setAttribute('opacity',k);UI.fx.append(n);continue;}const r=36*(1-k)+5;UI.fx.append(el('circle',{cx:f.x,cy:f.y,r,fill:'none',stroke:f.kind==='dodge'?'#52a9ff':'#f4c95d','stroke-width':4,opacity:k}));UI.fx.append(line(f.x-r*.7,f.y-r*.7,f.x+r*.7,f.y+r*.7,'spark-line'));UI.fx.append(line(f.x-r*.7,f.y+r*.7,f.x+r*.7,f.y-r*.7,'spark-line'));}}
 function draw(){drawEnemy();drawDude();drawFx();}
@@ -248,5 +448,5 @@ function autoPickMove(){if(state.pendingChoices?.length)selectMove(sample(state.
 function applyInfluence(action){if(state.awaitingChoice||!state.running)return;if(action==='cheer'){state.dude.punchPower+=1;state.dude.kickPower+=1;if(profileHasKi())state.resources.X=Math.min(state.resources.XMax,state.resources.X+8);pushLog(profileHasKi()?'Cheer adds Punch/Kick +1 and sparks Ki.':'Cheer adds Punch/Kick +1.')} if(action==='heal'){state.dude.hp=Math.min(state.dude.maxHp,state.dude.hp+16);pushLog('Second Wind restores 16 Fortitude.')} if(action==='weaken'){state.enemy.power=Math.max(1,state.enemy.power-2);pushLog(`${state.enemy.name} loses 2 power.`)}}
 function bind(){UI.pauseBtn.onclick=()=>{if(!state.defeated&&state.dude.hp>0)state.running=!state.running};UI.speedBtn.onclick=()=>{state.speed=state.speed===1?2:state.speed===2?4:1};UI.restartBtn.onclick=()=>{state=createInitialState();setFighterProfile(currentFighterProfile,{silent:true})};UI.autoPickBtn.onclick=autoPickMove;UI.autoPowerToggle.onchange=()=>{state.autoPower=UI.autoPowerToggle.checked;pushLog(`Auto-pick powers ${state.autoPower?'enabled':'disabled'}.`)};UI.manualToggle.onchange=()=>{state.manual=UI.manualToggle.checked;pushLog(`Manual input ${state.manual?'enabled':'disabled'}.`)};UI.manualControls.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>performDudeAction(b.dataset.move));if(UI.fighterProfileSelect)UI.fighterProfileSelect.onchange=()=>setFighterProfile(UI.fighterProfileSelect.value);document.querySelectorAll('.influence-btn').forEach(b=>b.onclick=()=>applyInfluence(b.dataset.action));document.addEventListener('keydown',e=>{if(state.awaitingChoice){if(e.key==='1'&&state.pendingChoices[0])selectMove(state.pendingChoices[0]);if(e.key==='2'&&state.pendingChoices[1])selectMove(state.pendingChoices[1]);if(e.key==='3'&&state.pendingChoices[2])selectMove(state.pendingChoices[2]);if(e.key.toLowerCase()==='a')autoPickMove();return;} const k=e.key.toLowerCase(); if(state.manual){const keys={'1':'punch','2':'oneTwo','3':'kick','4':'sweep','5':'uppercut','6':'jumpKick',j:'jump',k:'duck',l:'block'}; if(profileHasKi())keys['7']='hadouken'; if(keys[k]){performDudeAction(keys[k]);return;}} if(k==='q')applyInfluence('cheer'); if(k==='w')applyInfluence('heal'); if(k==='e')applyInfluence('weaken');});}
 function loop(ts){const dt=Math.min(.05,(ts-lastTs)/1000)*state.speed;lastTs=ts;update(dt);render();requestAnimationFrame(loop)}
-function boot(){assertUI();initBackground();bind();setFighterProfile(currentFighterProfile,{silent:true});render();requestAnimationFrame(loop)}
+function boot(){console.info('IdleFist animation build:', ANIM_BUILD_TAG);assertUI();initBackground();bind();setFighterProfile(currentFighterProfile,{silent:true});render();requestAnimationFrame(loop)}
 try{boot()}catch(err){showBootError(err)}
