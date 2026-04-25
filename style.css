@@ -26,3 +26,16 @@
 .dude-fighter .strike-limb{stroke-width:calc(var(--profile-line,3.05) + .35px)}
 
 .ki-orb{fill:rgba(217,135,255,.34);stroke:#d987ff;stroke-width:2.1;filter:drop-shadow(0 0 6px rgba(217,135,255,.65))}
+
+
+/* v-animation-polish: tiny arcade reads without changing move logic */
+.run-dust{fill:none;stroke:rgba(244,201,93,.45);stroke-width:1.4;stroke-linecap:round;stroke-dasharray:5 7;opacity:.72}.run-dust.soft{opacity:.34;stroke-width:1}.motion-slash{fill:none;stroke:rgba(244,201,93,.58);stroke-width:1.35;stroke-linecap:round;stroke-dasharray:10 8;opacity:.78}.dude-fighter{filter:drop-shadow(0 0 3px rgba(244,201,93,.10))}.enemy-fighter{filter:drop-shadow(0 0 3px rgba(255,93,93,.08))}
+
+/* Human puppet renderer: makes the pose-library animation visibly match the sprite-reference plan. */
+.human-puppet .skin-limb{stroke:#e7a66f;stroke-width:9.5;stroke-linecap:round;stroke-linejoin:round;fill:none;filter:drop-shadow(0 1px 0 rgba(0,0,0,.55))}
+.human-puppet .pants-limb{stroke:#202833;stroke-width:11;stroke-linecap:round;stroke-linejoin:round;fill:none;filter:drop-shadow(0 1px 0 rgba(0,0,0,.6))}
+.human-puppet .hand-limb,.human-puppet .foot-limb{stroke:#eab17d;stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.human-puppet .glove-fill{fill:#d4332e;stroke:#180707;stroke-width:1.2}.human-puppet .strike-glove{fill:#ffcf5a}
+.human-puppet .foot-dot{fill:#eab17d;stroke:#1a0e0b;stroke-width:1}.human-puppet .joint-shadow{fill:rgba(0,0,0,.32);stroke:rgba(255,255,255,.12);stroke-width:.6}
+.human-puppet .torso-fill{fill:#efe8d5;stroke:#17120e;stroke-width:1.6;filter:drop-shadow(0 1px 0 rgba(0,0,0,.55))}.human-puppet .gi-fold{stroke:#b24c42;stroke-width:2.2;stroke-linecap:round}.human-puppet .belt-line{stroke:#151515;stroke-width:4.8;stroke-linecap:round}.human-puppet .head-fill{fill:#eab17d;stroke:#180f0c;stroke-width:1.7}.human-puppet .hair-line{fill:none;stroke:#111;stroke-width:4.2;stroke-linecap:round}
+.human-puppet .strike-limb{filter:drop-shadow(0 0 4px rgba(244,201,93,.5))}

@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+const ANIM_BUILD_TAG = 'sprite-sheet-traced-locomotion-v4';
 const showBootError = (err) => { const box=$('bootError'); box.classList.remove('hidden'); box.textContent=`IdleFist boot error:\n${err?.stack||err}`; console.error(err); };
 window.addEventListener('error', e=>showBootError(e.error||e.message));
 window.addEventListener('unhandledrejection', e=>showBootError(e.reason));
@@ -25,7 +26,7 @@ const HIT_BOXES={
 const rand=(a,b)=>Math.random()*(b-a)+a, randInt=(a,b)=>Math.floor(rand(a,b+1)), sample=a=>a[randInt(0,a.length-1)], clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const UI={ svg:$('fightSvg'),bg:$('backgroundLayer'),dude:$('dudeGroup'),enemy:$('enemyGroup'),fx:$('fxLayer'),shakeLayer:$('shakeLayer'),floorLabel:$('floorLabel'),moveLabel:$('moveLabel'),stateLabel:$('stateLabel'),fighterProfileSelect:$('fighterProfileSelect'),enemyName:$('enemyName'),heroMeters:$('heroMeters'),enemyMeters:$('enemyMeters'),combatLog:$('combatLog'),buildSummary:$('buildSummary'),runStats:$('runStats'),pauseBtn:$('pauseBtn'),speedBtn:$('speedBtn'),restartBtn:$('restartBtn'),levelModal:$('levelModal'),levelText:$('levelText'),choiceList:$('choiceList'),autoPickBtn:$('autoPickBtn'),autoPowerToggle:$('autoPowerToggle'),manualToggle:$('manualToggle'),manualControls:$('manualControls') };
 function assertUI(){ for(const [k,v] of Object.entries(UI)) if(!v) throw new Error(`Missing UI element: ${k}`); }
-let currentFighterProfile='default';
+let currentFighterProfile='alleyBrawler';
 let lastFacing=1;
 const FIGHTER_PROFILES={default:{label:'Default',line:3.05,joint:2.7,walkSpeed:116},alleyBrawler:{label:'Alley Brawler',line:3.65,joint:3.35,walkSpeed:168}};
 const profileHasKi=()=>currentFighterProfile==='alleyBrawler';
@@ -62,7 +63,13 @@ function rollFloorTarget(){return randInt(8,12)}
 function createInitialState(){ const s={running:true,speed:1,awaitingChoice:false,fighterProfile:currentFighterProfile,floor:1,floorKills:0,floorTarget:rollFloorTarget(),bossPending:false,level:1,xp:0,kills:0,totalDamage:0,combo:0,ascensions:0,defeated:false,deathTimer:0,autoRestartDelay:3,stats:{F:1,R:1,S:1,X:profileHasKi()?1:0},resources:{R:100,RMax:100,S:100,SMax:100,X:profileHasKi()?35:0,XMax:profileHasKi()?100:0},build:baseBuildForProfile(),pendingChoices:[],fx:[],shake:0,autoPower:true,manual:false,dude:{hp:90,maxHp:90,x:190,baseX:190,minX:54,maxX:884,profile:currentFighterProfile,facing:1,prevFacing:1,turnLock:0,y:LANE_Y.lower,punchPower:12,kickPower:12,actionInterval:.84,actionCd:.15,stepSpeed:92,timing:.58,jumpWindow:.42,duckWindow:.42,dodgeCost:25,counterBonus:0,comboDamage:0,pose:'idle',poseTime:0,invuln:0,attack:null},enemy:null,enemySlots:[],log:['The Dude enters Floor 1. Clear the wave, then punch the miniboss.']}; s.enemySlots=makeEnemyWave(s.floor,false); s.enemy=s.enemySlots.reduce((best,e)=>Math.abs(e.x-s.dude.x)<Math.abs(best.x-s.dude.x)?e:best,s.enemySlots[0]); return s; }
 let state=createInitialState(), lastTs=performance.now();
 function pushLog(t){state.log.unshift(t);state.log=state.log.slice(0,13)}
-function setPose(p,time=.28){state.dude.pose=p;state.dude.poseTime=time}
+function setPose(p,time=.28,blend=.12){
+ const d=state.dude;
+ if(!d)return;
+ if(d.pose!==p){d.poseBlend={from:d.pose||'idle',to:p,age:0,duration:blend,fromAge:d.poseAge||0};}
+ d.pose=p; d.poseTime=time; d.poseAge=0;
+}
+function settlePose(p='idle',blend=.16){const d=state.dude;if(d.pose!==p)setPose(p,.28,blend);}
 function addFx(kind,x,y){state.fx.push({kind,x,y,t:.22,max:.22})}
 function addTextFx(label,x,y){state.fx.push({kind:'text',label,x,y,t:.55,max:.55})}
 function spendR(a){state.resources.R=Math.max(0,state.resources.R-a)} function spendS(a){state.resources.S=Math.max(0,state.resources.S-a)}
@@ -84,14 +91,14 @@ function getEnemyHurtBox(e){const y1=Math.min(...e.lanes.map(l=>LANE_Y[l]-42)),y
 function getDudeHitBox(move){const d=state.dude,b=HIT_BOXES[move]; const lift=(d.pose==='jump'||d.pose==='jumpKick')?-48:d.pose==='duck'?23:0; const face=d.facing||enemyDir(); return face>=0?{x1:d.x+b.x1,x2:d.x+b.x2,y1:d.y+lift+b.y1,y2:d.y+lift+b.y2,lane:b.lane}:{x1:d.x-b.x2,x2:d.x-b.x1,y1:d.y+lift+b.y1,y2:d.y+lift+b.y2,lane:b.lane};}
 const boxesOverlap=(a,b)=>a.x1<=b.x2&&a.x2>=b.x1&&a.y1<=b.y2&&a.y2>=b.y1;
 function attackBaseDamage(move){const d=state.dude; if(move==='punch')return d.punchPower; if(move==='oneTwo')return Math.max(6,Math.floor(d.punchPower*.72)); if(move==='kick')return d.kickPower+2; if(move==='sweep')return Math.max(5,Math.floor(d.kickPower*.72)); if(move==='uppercut')return Math.floor((d.punchPower+d.kickPower)/2)+5; if(move==='jumpKick')return Math.floor((d.punchPower+d.kickPower)/2)+9; if(move==='hadouken')return 18+state.stats.X*4; return 8;}
-function processDudeAttack(dt){const d=state.dude,e=state.enemy,a=d.attack;if(!a||!e)return; a.t+=dt; for(const impact of a.impacts){ if(!impact.done&&a.t>=impact.t){impact.done=true; const hitBox=getDudeHitBox(a.move),hurtBox=getEnemyHurtBox(e),laneOk=e.lanes.includes(hitBox.lane); if(a.move==='oneTwo'&&impact.t>.2){hitBox.x1+=14;hitBox.x2+=18;} a.hitBox=hitBox; a.showBox=.13; if(laneOk&&boxesOverlap(hitBox,hurtBox)){damageEnemy(randInt(attackBaseDamage(a.move)-2,attackBaseDamage(a.move)+4)+Math.floor((a.move==='hadouken'?state.stats.X:state.stats.F)*1.5),a.label); if(profileHasKi()&&a.move!=='hadouken')state.resources.X=Math.min(state.resources.XMax,state.resources.X+3);}  else{state.combo=0;pushLog(`${a.label} whiffs${laneOk?'':' the wrong lane'}.`);addTextFx('whiff',d.x+82,d.y-94);}} } if(a.showBox)a.showBox=Math.max(0,a.showBox-dt); if(a.t>=a.duration){d.attack=null;if(d.pose===a.move)d.pose='idle';}}
+function processDudeAttack(dt){const d=state.dude,e=state.enemy,a=d.attack;if(!a||!e)return; a.t+=dt; for(const impact of a.impacts){ if(!impact.done&&a.t>=impact.t){impact.done=true; const hitBox=getDudeHitBox(a.move),hurtBox=getEnemyHurtBox(e),laneOk=e.lanes.includes(hitBox.lane); if(a.move==='oneTwo'&&impact.t>.2){hitBox.x1+=14;hitBox.x2+=18;} a.hitBox=hitBox; a.showBox=.13; if(laneOk&&boxesOverlap(hitBox,hurtBox)){damageEnemy(randInt(attackBaseDamage(a.move)-2,attackBaseDamage(a.move)+4)+Math.floor((a.move==='hadouken'?state.stats.X:state.stats.F)*1.5),a.label); if(profileHasKi()&&a.move!=='hadouken')state.resources.X=Math.min(state.resources.XMax,state.resources.X+3);}  else{state.combo=0;pushLog(`${a.label} whiffs${laneOk?'':' the wrong lane'}.`);addTextFx('whiff',d.x+82,d.y-94);}} } if(a.showBox)a.showBox=Math.max(0,a.showBox-dt); if(a.t>=a.duration){d.attack=null;if(d.pose===a.move)settlePose('idle',.16);}}
 function processEnemyAttack(dt,target=state.enemy){const e=target,d=state.dude,a=e?.attack;if(!a)return; a.t+=dt; if(!a.done&&a.t>=a.impact){a.done=true; const dist=Math.abs(e.x-d.x);if(dist>e.range+22)return; const blocked=a.lane==='mid'&&d.pose==='block'; const dodged=(a.lane==='lower'&&d.pose==='jump')||(a.lane==='mid'&&d.pose==='duck')||d.invuln>0||blocked; if(dodged){addFx(blocked?'block':'dodge',d.x,d.y-74);addTextFx(blocked?'BLOCK':'DODGE',d.x-20,d.y-112);pushLog(blocked?`The Dude blocks ${e.name}'s mid attack.`:`The Dude dodges ${e.name}'s ${a.lane} attack.`);return;} damageDude(randInt(Math.max(1,e.power-2),e.power+2),e.name);} if(a.t>=a.duration)e.attack=null;}
 function update(dt){
  const d=state.dude;
  state.fx.forEach(f=>f.t-=dt); state.fx=state.fx.filter(f=>f.t>0);
  state.shake=Math.max(0,(state.shake||0)-dt);
  if(state.defeated){
-  state.deathTimer+=dt; d.pose='dead'; d.poseTime=999;
+  state.deathTimer+=dt; if(d.pose!=='dead')setPose('dead',999,.08); d.poseTime=999;
   if(!state.manual&&state.deathTimer>=state.autoRestartDelay){
    const oldAsc=state.ascensions; state=createInitialState(); state.ascensions=oldAsc;
    pushLog('The Dude shakes it off and starts over.');
@@ -105,16 +112,16 @@ function update(dt){
  if(!e)return;
  setFacing(enemyDir());
  d.turnLock=Math.max(0,(d.turnLock||0)-dt);
- d.poseTime=Math.max(0,d.poseTime-dt);
+ d.poseTime=Math.max(0,d.poseTime-dt); d.poseAge=(d.poseAge||0)+dt; if(d.poseBlend){d.poseBlend.age+=dt; if(d.poseBlend.age>=d.poseBlend.duration)d.poseBlend=null;}
  d.invuln=Math.max(0,d.invuln-dt);
  for(const foe of aliveEnemies()){foe.hitFlash=Math.max(0,foe.hitFlash-dt);foe.stagger=Math.max(0,foe.stagger-dt);}
  state.resources.R=Math.min(state.resources.RMax,state.resources.R+(12+state.stats.R*2)*dt);
  state.resources.S=Math.min(state.resources.SMax,state.resources.S+(8+state.stats.S*1.5)*dt);
  if(profileHasKi())state.resources.X=Math.min(state.resources.XMax,state.resources.X+(3+state.stats.X)*dt);
  processDudeAttack(dt);
- if(d.poseTime<=0&&!['idle','run','turn'].includes(d.pose)&&!d.attack)d.pose='idle';
+ if(d.poseTime<=0&&!['idle','run','turn'].includes(d.pose)&&!d.attack)settlePose('idle');
  if(!state.running){
-  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)d.pose='idle';
+  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)settlePose('idle');
   return;
  }
  const desired=e.attack?108:132;
@@ -145,12 +152,12 @@ function update(dt){
   const dudeStep=(profile.walkSpeed||100)*dt;
   if(!d.attack && d.turnLock<=0){
    d.x=clamp(d.x+dir*dudeStep,d.minX,d.maxX);
-   if(!['jump','duck','block','hurt','dead','turn'].includes(d.pose))d.pose='run';
+   if(!['jump','duck','block','hurt','dead','turn'].includes(d.pose))settlePose('run',.14);
   }
  } else {
   const overlap=desired-gap;
   if(overlap>0 && !d.attack)d.x=clamp(d.x-dir*overlap*.045,d.minX,d.maxX);
-  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)d.pose='idle';
+  if(!d.attack&&(d.pose==='run'||d.pose==='turn')&&d.turnLock<=0)settlePose('idle');
  }
  d.actionCd-=dt;
  if(!state.manual&&d.actionCd<=0&&!d.attack){
@@ -158,143 +165,192 @@ function update(dt){
   performDudeAction(chooseAutoMove(active));
  }
 }
+function animProgress(){const a=state.dude.attack;if(a)return clamp(a.t/a.duration,0,1);const d=state.dude;const total=(d.poseAge||0)+(d.poseTime||0);return total>0?clamp((d.poseAge||0)/total,0,1):0;}
 function phase(){const a=state.dude.attack;if(!a)return 0;if(a.move==='oneTwo'){const second=a.t>=.28,start=second?.28:0,impact=second?.40:.15,end=second?a.duration:.28;if(a.t<=impact)return clamp((a.t-start)/(impact-start),0,1);return 1-clamp((a.t-impact)/(end-impact),0,1)*.35;}const first=a.impact||.18;if(a.t<=first)return a.t/first;return 1-((a.t-first)/(a.duration-first))*.35;}
 function limbs(g,pts){for(const p of pts)g.append(line(...p));}
 const DUDE_MODELS={
  default:{headR:11,neck:-70,hip:-12,shoulderW:10,hipW:8,upperArm:27,foreArm:30,wrist:7,upperLeg:34,lowerLeg:38,foot:12,jointR:2.7},
- alleyBrawler:{headR:11.5,neck:-70,hip:-12,shoulderW:12,hipW:10,upperArm:28,foreArm:31,wrist:8,upperLeg:35,lowerLeg:39,foot:14,jointR:3.35}
-};
-let DUDE_MODEL={...DUDE_MODELS.default};
-const resolveDudeModel=(profileName)=>({ ...DUDE_MODELS.default, ...(DUDE_MODELS[profileName]||{}) });
-const pt=(x,y,deg,len)=>[x+Math.cos(deg*Math.PI/180)*len,y+Math.sin(deg*Math.PI/180)*len];
-function chain(g,x,y,a1,l1,a2,l2,cls='dude-line',endCls='dude-line') { const [ex,ey]=pt(x,y,a1,l1), [hx,hy]=pt(ex,ey,a2,l2); g.append(line(x,y,ex,ey,cls)); g.append(line(ex,ey,hx,hy,endCls)); g.append(circle(ex,ey,DUDE_MODEL.jointR,'dude-joint')); g.append(circle(hx,hy,DUDE_MODEL.jointR*.72,'end-cap')); return [hx,hy]; }
-<<<<<<< Updated upstream
-=======
-function armChain(g,x,y,a1,a2,side=1,active=false){ const hand=chain(g,x,y,a1,DUDE_MODEL.upperArm,a2,DUDE_MODEL.foreArm,'dude-line',active?'dude-line strike-limb':'dude-line'); const wristAngle=a2+side*10; const end=pt(hand[0],hand[1],wristAngle,DUDE_MODEL.wrist); g.append(line(hand[0],hand[1],end[0],end[1],active?'dude-line strike-limb':'dude-line')); g.append(circle(end[0],end[1],DUDE_MODEL.jointR*.58,'end-cap')); return end; }
-function legChain(g,x,y,a1,a2,side=1,active=false){ const ankle=chain(g,x,y,a1,DUDE_MODEL.upperLeg,a2,DUDE_MODEL.lowerLeg,'dude-line',active?'dude-line strike-limb':'dude-line'); const footAngle=active?a2:a2+(side>0?18:-18); const toe=pt(ankle[0],ankle[1],footAngle,DUDE_MODEL.foot); g.append(line(ankle[0],ankle[1],toe[0],toe[1],active?'dude-line strike-limb':'dude-line')); g.append(circle(toe[0],toe[1],DUDE_MODEL.jointR*.52,'end-cap')); return toe; }
-const POSE_LIBRARY={
- default:{
-  idle:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.5,la:[146,156],ra:[25,34],ll:[110,78],rl:[70,102],lean:2,hip:1},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  run:[{t:0,la:[162,150],ra:[18,38],ll:[82,92],rl:[92,84],lean:5,hip:-3},{t:.5,la:[130,158],ra:[42,32],ll:[124,56],rl:[48,134],lean:6,hip:4},{t:1,la:[162,150],ra:[18,38],ll:[82,92],rl:[92,84],lean:5,hip:-3}],
-  turn:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.45,la:[118,148],ra:[62,86],ll:[96,84],rl:[82,116],lean:12,hip:8},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  punch:[{t:0,la:[142,154],ra:[30,42],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.28,la:[150,154],ra:[52,78],ll:[108,74],rl:[72,104],lean:-4,hip:-2},{t:.52,la:[150,154],ra:[-26,12],ll:[108,72],rl:[66,108],lean:9,hip:7},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  oneTwo:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.18,la:[150,154],ra:[-12,6],ll:[108,74],rl:[66,106],lean:7,hip:4},{t:.40,la:[132,158],ra:[56,78],ll:[92,94],rl:[55,126],lean:-2,hip:-8},{t:.62,la:[-8,0],ra:[145,160],ll:[84,96],rl:[60,124],lean:12,hip:10},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  kick:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.35,la:[150,156],ra:[18,42],ll:[100,90],rl:[46,54],lean:-7,hip:4},{t:.58,la:[150,154],ra:[24,42],ll:[114,84],rl:[-18,-8],lean:-10,hip:8},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  sweep:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.32,la:[156,158],ra:[28,54],ll:[130,54],rl:[52,134],lean:12,hip:12},{t:.58,la:[154,154],ra:[24,52],ll:[126,86],rl:[18,6],lean:10,hip:8},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  uppercut:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.34,la:[154,158],ra:[42,70],ll:[126,58],rl:[50,134],lean:13,hip:10},{t:.58,la:[154,154],ra:[-86,-104],ll:[108,76],rl:[68,108],lean:-10,hip:2},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  jumpKick:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.35,la:[160,154],ra:[20,28],ll:[130,158],rl:[44,22],lean:0,hip:4},{t:.60,la:[156,152],ra:[24,46],ll:[144,170],rl:[-14,-8],lean:2,hip:8},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  jump:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.4,la:[160,154],ra:[20,28],ll:[130,158],rl:[48,22],lean:0,hip:4},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  duck:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.45,la:[160,154],ra:[16,34],ll:[126,46],rl:[54,134],lean:11,hip:15},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
-  block:[{t:0,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0},{t:.25,la:[-88,-34],ra:[-118,-146],ll:[110,76],rl:[68,108],lean:3,hip:2},{t:1,la:[-88,-34],ra:[-118,-146],ll:[110,76],rl:[68,108],lean:3,hip:2}],
-  hurt:[{t:0,la:[24,36],ra:[148,154],ll:[112,76],rl:[68,104],lean:-10,hip:-5},{t:1,la:[142,154],ra:[28,36],ll:[112,76],rl:[68,104],lean:0,hip:0}],
- },
  alleyBrawler:{
-  // Labeled-sheet style: each move is startup -> smear/active -> recovery, ordered left-to-right.
-  idle:[{t:0,la:[-96,-138],ra:[-48,-98],ll:[106,76],rl:[62,122],lean:14,hip:-3},{t:.25,la:[-102,-144],ra:[-42,-90],ll:[104,80],rl:[66,118],lean:17,hip:0},{t:.5,la:[-88,-130],ra:[-56,-104],ll:[110,72],rl:[58,126],lean:12,hip:-5},{t:.75,la:[-104,-146],ra:[-40,-88],ll:[102,82],rl:[68,116],lean:18,hip:1},{t:1,la:[-96,-138],ra:[-48,-98],ll:[106,76],rl:[62,122],lean:14,hip:-3}],
-  run:[{t:0,la:[-118,-154],ra:[-28,-76],ll:[82,110],rl:[86,70],lean:21,hip:-8,yShift:1},{t:.25,la:[-82,-126],ra:[-70,-118],ll:[102,56],rl:[48,140],lean:16,hip:7,yShift:-2},{t:.5,la:[-38,-86],ra:[-116,-154],ll:[84,112],rl:[94,66],lean:22,hip:10,yShift:1},{t:.75,la:[-96,-138],ra:[-48,-96],ll:[116,60],rl:[42,142],lean:15,hip:-4,yShift:-2},{t:1,la:[-118,-154],ra:[-28,-76],ll:[82,110],rl:[86,70],lean:21,hip:-8,yShift:1}],
-  turn:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.25,la:[-56,-106],ra:[-134,-168],ll:[82,104],rl:[84,122],lean:22,hip:14},{t:.52,la:[-18,-64],ra:[-170,-188],ll:[68,122],rl:[102,78],lean:-2,hip:22},{t:.78,la:[-136,-162],ra:[-42,-92],ll:[126,58],rl:[48,136],lean:16,hip:-10},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  punch:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-136,-170],ra:[-72,-124],ll:[116,58],rl:[50,136],lean:18,hip:8},{t:.34,la:[-152,-178],ra:[-72,-20],ll:[108,66],rl:[42,140],lean:27,hip:16},{t:.48,la:[-128,-164],ra:[-26,4],ll:[104,70],rl:[48,134],lean:20,hip:10},{t:.70,la:[-120,-156],ra:[-48,-82],ll:[112,66],rl:[54,128],lean:12,hip:4},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  oneTwo:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.12,la:[-134,-170],ra:[-68,-118],ll:[116,58],rl:[50,136],lean:17,hip:7},{t:.24,la:[-150,-176],ra:[-70,-18],ll:[108,66],rl:[42,140],lean:26,hip:15},{t:.36,la:[-116,-154],ra:[-30,-82],ll:[112,66],rl:[54,128],lean:12,hip:2},{t:.48,la:[-54,-98],ra:[-154,-180],ll:[74,116],rl:[24,156],lean:34,hip:28,yShift:2},{t:.62,la:[-28,-4],ra:[-160,-184],ll:[70,120],rl:[22,158],lean:36,hip:34,yShift:3},{t:.82,la:[-82,-124],ra:[-112,-154],ll:[104,76],rl:[44,138],lean:18,hip:12},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  kick:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-128,-160],ra:[-48,-94],ll:[112,78],rl:[38,68],lean:-4,hip:8},{t:.38,la:[-144,-174],ra:[-44,-86],ll:[126,92],rl:[-20,-6],lean:-21,hip:18,yShift:-2},{t:.56,la:[-132,-162],ra:[-52,-96],ll:[124,88],rl:[-18,-8],lean:-15,hip:14},{t:.78,la:[-108,-148],ra:[-58,-112],ll:[112,78],rl:[34,70],lean:-2,hip:6},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  sweep:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-92,-132],ra:[-46,-92],ll:[138,44],rl:[42,148],lean:24,hip:22,yShift:15},{t:.38,la:[-54,-102],ra:[-124,-160],ll:[158,92],rl:[-2,0],lean:35,hip:30,yShift:20},{t:.58,la:[-42,-90],ra:[-136,-170],ll:[162,88],rl:[8,2],lean:30,hip:25,yShift:18},{t:.80,la:[-94,-134],ra:[-74,-118],ll:[130,58],rl:[42,142],lean:18,hip:12,yShift:8},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  uppercut:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-136,-166],ra:[-40,-74],ll:[136,48],rl:[40,148],lean:28,hip:18,yShift:10},{t:.38,la:[-126,-158],ra:[-106,-136],ll:[116,66],rl:[58,122],lean:-18,hip:4,yShift:-8},{t:.52,la:[-116,-150],ra:[-92,-126],ll:[106,80],rl:[68,110],lean:-24,hip:0,yShift:-12},{t:.76,la:[-110,-146],ra:[-58,-108],ll:[112,70],rl:[56,126],lean:2,hip:0},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  jumpKick:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-128,-154],ra:[-74,-116],ll:[144,170],rl:[26,18],lean:3,hip:8,yShift:-18},{t:.42,la:[-156,-178],ra:[-34,-80],ll:[164,184],rl:[-22,-8],lean:8,hip:18,yShift:-48},{t:.62,la:[-150,-174],ra:[-44,-88],ll:[152,176],rl:[-18,-8],lean:4,hip:14,yShift:-42},{t:.82,la:[-112,-148],ra:[-64,-108],ll:[132,150],rl:[34,32],lean:2,hip:4,yShift:-18},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  hadouken:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.18,la:[-84,-118],ra:[-64,-104],ll:[126,66],rl:[48,136],lean:23,hip:18},{t:.38,la:[-54,-92],ra:[-42,-82],ll:[116,70],rl:[40,140],lean:31,hip:24},{t:.56,la:[-18,-4],ra:[-18,-4],ll:[112,68],rl:[40,142],lean:32,hip:28},{t:.76,la:[-20,-10],ra:[-20,-10],ll:[112,68],rl:[40,142],lean:24,hip:18},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  jump:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.35,la:[-132,-156],ra:[-74,-116],ll:[144,166],rl:[38,22],lean:0,hip:6,yShift:-46},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  duck:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.35,la:[-104,-140],ra:[-66,-108],ll:[142,42],rl:[46,150],lean:24,hip:22,yShift:22},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
-  block:[{t:0,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0},{t:.2,la:[-70,-20],ra:[-118,-158],ll:[112,72],rl:[62,118],lean:8,hip:4},{t:1,la:[-70,-20],ra:[-118,-158],ll:[112,72],rl:[62,118],lean:8,hip:4}],
-  hurt:[{t:0,la:[178,170],ra:[8,16],ll:[124,86],rl:[76,120],lean:-20,hip:-8,yShift:2},{t:.55,la:[166,160],ra:[18,28],ll:[116,82],rl:[72,116],lean:-10,hip:-4},{t:1,la:[-108,-148],ra:[-58,-112],ll:[118,62],rl:[54,130],lean:9,hip:0}],
- }
+  // ANIMATION PATCH NOTE FOR FUTURE ME:
+  // The visible in-game dude is driven from this exact object via poseAngles() -> drawDude() -> drawHumanPuppet().
+  // Earlier patches failed because they edited/imagined "walk" data, but the live locomotion pose is named `run`.
+  // Angle convention for this renderer: 0 = right, 90 = down, 180 = left, negative = up.
+  // Therefore arms flail over the head when upper-arm angles go negative. Keep idle/run/turn upper arms positive.
+  // These keyframes are traced from the labelled movement sheet the user sent:
+  //   Idle, Turn, Crouch, Crouch Turn, Forward Walk Loop, Backup Walk Loop, Forward Flip, Vertical Jump.
+  // The game currently calls idle/run/turn/duck/jump/dead, so those are the relevant sheet-backed loops here.
+  idle:[
+   // Sheet row: Idle. Compact side-on guard, small breath/weight shift.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.25,la:[108,-20],ra:[38,-22],ll:[106,76],rl:[64,118],lean:10,hip:-2,yShift:-1},
+   {t:.50,la:[102,-26],ra:[44,-16],ll:[110,70],rl:[60,124],lean:8,hip:-5,yShift:0},
+   {t:.75,la:[110,-18],ra:[40,-20],ll:[104,78],rl:[66,116],lean:10,hip:-1,yShift:-1},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  run:[
+   // Sheet row: forward walk loop. Six-frame brawler walk: contact -> settle -> passing -> contact -> settle -> recover.
+   // Hands stay around chest/waist; legs do the readable motion.
+   {t:0.00,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:11,hip:-5,yShift:0},
+   {t:0.17,la:[112,-18],ra:[36,-24],ll:[94,88],rl:[78,112],lean:12,hip:-1,yShift:-1},
+   {t:0.34,la:[116,-14],ra:[34,-28],ll:[116,58],rl:[58,138],lean:10,hip:4,yShift:1},
+   {t:0.50,la:[104,-24],ra:[42,-18],ll:[104,70],rl:[80,112],lean:12,hip:2,yShift:0},
+   {t:0.67,la:[96,-30],ra:[50,-12],ll:[78,112],rl:[96,86],lean:11,hip:-4,yShift:1},
+   {t:0.84,la:[100,-26],ra:[46,-16],ll:[58,138],rl:[116,58],lean:10,hip:-6,yShift:0},
+   {t:1.00,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:11,hip:-5,yShift:0}
+  ],
+  backRun:[
+   // Sheet row: backup walk loop. Not currently called by the AI, but kept here for when retreat/backstep is added.
+   {t:0.00,la:[96,-30],ra:[50,-12],ll:[104,70],rl:[80,112],lean:4,hip:2,yShift:0},
+   {t:0.20,la:[100,-26],ra:[46,-16],ll:[92,92],rl:[100,78],lean:3,hip:0,yShift:-1},
+   {t:0.40,la:[110,-18],ra:[38,-24],ll:[70,122],rl:[114,62],lean:2,hip:-4,yShift:1},
+   {t:0.60,la:[104,-24],ra:[42,-18],ll:[80,112],rl:[104,70],lean:3,hip:-2,yShift:0},
+   {t:0.80,la:[98,-28],ra:[48,-14],ll:[112,62],rl:[70,122],lean:4,hip:4,yShift:1},
+   {t:1.00,la:[96,-30],ra:[50,-12],ll:[104,70],rl:[80,112],lean:4,hip:2,yShift:0}
+  ],
+  turn:[
+   // Sheet row: Turn. Pivot through a guarded crouch instead of whipping arms above the head.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.22,la:[88,-34],ra:[58,-8],ll:[124,56],rl:[48,146],lean:18,hip:16,yShift:7},
+   {t:.50,la:[76,-38],ra:[70,-4],ll:[116,78],rl:[66,128],lean:4,hip:24,yShift:10},
+   {t:.78,la:[94,-30],ra:[52,-12],ll:[102,82],rl:[70,116],lean:12,hip:8,yShift:4},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  punch:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[118,-14],ra:[34,-28],ll:[104,76],rl:[58,128],lean:17,hip:6},{t:.34,la:[126,-8],ra:[-18,4],ll:[100,78],rl:[52,134],lean:27,hip:15},{t:.48,la:[114,-16],ra:[8,12],ll:[104,76],rl:[58,128],lean:20,hip:9},{t:.70,la:[108,-20],ra:[34,-18],ll:[106,74],rl:[60,124],lean:12,hip:0},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  oneTwo:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.12,la:[122,-10],ra:[34,-28],ll:[104,76],rl:[58,128],lean:17,hip:7},{t:.24,la:[130,-6],ra:[-16,4],ll:[100,78],rl:[52,134],lean:26,hip:15},{t:.36,la:[112,-18],ra:[20,-8],ll:[106,74],rl:[60,124],lean:12,hip:2},{t:.48,la:[-10,2],ra:[126,-8],ll:[78,112],rl:[38,150],lean:34,hip:28,yShift:2},{t:.62,la:[-24,-4],ra:[132,-6],ll:[74,118],rl:[34,154],lean:36,hip:34,yShift:3},{t:.82,la:[84,-34],ra:[92,-28],ll:[102,80],rl:[54,134],lean:18,hip:12},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  kick:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[116,-16],ra:[36,-24],ll:[110,78],rl:[38,68],lean:-4,hip:8},{t:.38,la:[124,-10],ra:[34,-28],ll:[126,92],rl:[-20,-6],lean:-21,hip:18,yShift:-2},{t:.56,la:[116,-16],ra:[36,-24],ll:[124,88],rl:[-18,-8],lean:-15,hip:14},{t:.78,la:[106,-22],ra:[42,-18],ll:[112,78],rl:[34,70],lean:-2,hip:6},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  sweep:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[96,-30],ra:[52,-12],ll:[138,44],rl:[42,148],lean:24,hip:22,yShift:15},{t:.38,la:[72,-42],ra:[84,-28],ll:[158,92],rl:[-2,0],lean:35,hip:30,yShift:20},{t:.58,la:[66,-46],ra:[92,-32],ll:[162,88],rl:[8,2],lean:30,hip:25,yShift:18},{t:.80,la:[96,-30],ra:[54,-14],ll:[130,58],rl:[42,142],lean:18,hip:12,yShift:8},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  uppercut:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[116,-16],ra:[54,-8],ll:[136,48],rl:[40,148],lean:28,hip:18,yShift:10},{t:.38,la:[110,-18],ra:[-92,-128],ll:[116,66],rl:[58,122],lean:-18,hip:4,yShift:-8},{t:.52,la:[106,-22],ra:[-86,-118],ll:[106,80],rl:[68,110],lean:-24,hip:0,yShift:-12},{t:.76,la:[104,-24],ra:[46,-16],ll:[112,70],rl:[56,126],lean:2,hip:0},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  jumpKick:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[112,-18],ra:[34,-28],ll:[144,170],rl:[26,18],lean:3,hip:8,yShift:-18},{t:.42,la:[124,-10],ra:[30,-32],ll:[164,184],rl:[-22,-8],lean:8,hip:18,yShift:-48},{t:.62,la:[118,-14],ra:[34,-28],ll:[152,176],rl:[-18,-8],lean:4,hip:14,yShift:-42},{t:.82,la:[106,-22],ra:[42,-18],ll:[132,150],rl:[34,32],lean:2,hip:4,yShift:-18},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  hadouken:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.18,la:[88,-34],ra:[56,-10],ll:[126,66],rl:[48,136],lean:23,hip:18},{t:.38,la:[50,-10],ra:[38,-14],ll:[116,70],rl:[40,140],lean:31,hip:24},{t:.56,la:[-18,-4],ra:[-18,-4],ll:[112,68],rl:[40,142],lean:32,hip:28},{t:.76,la:[-20,-10],ra:[-20,-10],ll:[112,68],rl:[40,142],lean:24,hip:18},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  jump:[
+   // Sheet row: vertical jump.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.20,la:[92,-34],ra:[56,-10],ll:[132,44],rl:[44,148],lean:18,hip:14,yShift:14},
+   {t:.45,la:[112,-18],ra:[36,-24],ll:[148,164],rl:[36,24],lean:4,hip:8,yShift:-46},
+   {t:.70,la:[116,-14],ra:[34,-28],ll:[138,156],rl:[46,34],lean:2,hip:4,yShift:-38},
+   {t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0}
+  ],
+  duck:[
+   // Sheet row: crouch.
+   {t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4,yShift:0},
+   {t:.25,la:[96,-30],ra:[52,-12],ll:[132,46],rl:[46,148],lean:22,hip:18,yShift:18},
+   {t:.55,la:[88,-34],ra:[58,-8],ll:[146,38],rl:[38,156],lean:26,hip:24,yShift:24},
+   {t:1,la:[88,-34],ra:[58,-8],ll:[146,38],rl:[38,156],lean:26,hip:24,yShift:24}
+  ],
+  block:[{t:0,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4},{t:.2,la:[78,-20],ra:[76,-18],ll:[108,72],rl:[62,122],lean:8,hip:4},{t:1,la:[78,-20],ra:[76,-18],ll:[108,72],rl:[62,122],lean:8,hip:4}],
+  hurt:[{t:0,la:[150,152],ra:[12,20],ll:[124,86],rl:[76,120],lean:-20,hip:-8,yShift:2},{t:.55,la:[136,146],ra:[22,28],ll:[116,82],rl:[72,116],lean:-10,hip:-4},{t:1,la:[104,-24],ra:[42,-18],ll:[108,72],rl:[62,122],lean:9,hip:-4}],
+  dead:[
+   // Sheet-inspired "on fall": buckle, sit/back, then settle flat. Non-looping because defeatDude sets pose='dead'.
+   {t:0,la:[150,152],ra:[12,22],ll:[108,72],rl:[62,122],lean:-18,hip:-8,yShift:0},
+   {t:.25,la:[138,146],ra:[24,34],ll:[132,82],rl:[72,118],lean:-34,hip:-18,yShift:9},
+   {t:.55,la:[126,154],ra:[32,14],ll:[154,100],rl:[28,166],lean:-54,hip:-34,yShift:21},
+   {t:1,la:[168,180],ra:[18,4],ll:[12,2],rl:[-12,-24],lean:-64,hip:-42,yShift:30}
+  ],
+ }};
+
+// Renderer/pose bridge notes:
+// - Live animation state names are `idle`, `run`, `turn`, `duck`, `jump`, `dead`.
+// - `run` is the forward walk loop. Editing a separate `walk` key will not affect gameplay.
+// - The puppet draw path is: POSE_LIBRARY -> poseAngles() -> drawDude() -> drawHumanPuppet().
+// - Angle convention: 0 = right, 90 = down, 180 = left, negative = up.
+// - Keep Alley Brawler idle/run upper-arm angles positive to prevent the old overhead arm-flail.
+const POSE_LIBRARY={
+ default:DUDE_MODELS.alleyBrawler,
+ alleyBrawler:DUDE_MODELS.alleyBrawler
 };
+let DUDE_MODEL=null;
+function resolveDudeModel(profile){
+ const base=DUDE_MODELS.default||{};
+ const overlay=DUDE_MODELS[profile]||{};
+ return {...base,...overlay};
+}
+function polarPoint(origin,angleDeg,len){
+ const rad=angleDeg*Math.PI/180;
+ return {x:origin.x+Math.cos(rad)*len,y:origin.y+Math.sin(rad)*len};
+}
+function svgLineBetween(a,b,cls){return line(a.x,a.y,b.x,b.y,cls);}
+function drawHumanPuppet(g,a,{bob=0,pose='idle',progress=0}={}){
+ const m=DUDE_MODEL||resolveDudeModel(currentFighterProfile);
+ const torsoTop={x:(a.lean||0)*.18,y:(m.neck||-70)+bob};
+ const hip={x:(a.hip||0)*.22,y:(m.hip||-12)+bob};
+ const shoulder={x:torsoTop.x,y:torsoTop.y+15};
+ const lw=(m.shoulderW||10), hw=(m.hipW||8);
+ const lShoulder={x:shoulder.x-lw,y:shoulder.y};
+ const rShoulder={x:shoulder.x+lw,y:shoulder.y};
+ const lHip={x:hip.x-hw,y:hip.y};
+ const rHip={x:hip.x+hw,y:hip.y};
+ const lElbow=polarPoint(lShoulder,a.la?.[0]??95,m.upperArm||27);
+ const lHand=polarPoint(lElbow,a.la?.[1]??35,m.foreArm||30);
+ const rElbow=polarPoint(rShoulder,a.ra?.[0]??55,m.upperArm||27);
+ const rHand=polarPoint(rElbow,a.ra?.[1]??-10,m.foreArm||30);
+ const lKnee=polarPoint(lHip,a.ll?.[0]??105,m.upperLeg||34);
+ const lFoot=polarPoint(lKnee,a.ll?.[1]??75,m.lowerLeg||38);
+ const rKnee=polarPoint(rHip,a.rl?.[0]??65,m.upperLeg||34);
+ const rFoot=polarPoint(rKnee,a.rl?.[1]??120,m.lowerLeg||38);
+ const strikeArm=(['punch','oneTwo','uppercut','hadouken'].includes(pose)&&progress>.18&&progress<.70);
+ const strikeLeg=(['kick','sweep','jumpKick'].includes(pose)&&progress>.22&&progress<.72);
+ // Back-side limbs first, torso next, front-side limbs last. This gives the side-on sprite-sheet read.
+ g.append(svgLineBetween(lHip,lKnee,'pants-limb'));
+ g.append(svgLineBetween(lKnee,lFoot,strikeLeg?'strike-limb pants-limb':'pants-limb'));
+ g.append(svgLineBetween(lShoulder,lElbow,'skin-limb'));
+ g.append(svgLineBetween(lElbow,lHand,strikeArm?'strike-limb skin-limb':'skin-limb'));
+ const torsoPath=`M ${lShoulder.x-7} ${lShoulder.y-5} C ${lShoulder.x-13} ${lShoulder.y+22}, ${lHip.x-10} ${lHip.y-3}, ${lHip.x-7} ${lHip.y+10} L ${rHip.x+9} ${rHip.y+10} C ${rHip.x+10} ${rHip.y-4}, ${rShoulder.x+13} ${rShoulder.y+21}, ${rShoulder.x+7} ${rShoulder.y-5} Z`;
+ g.append(el('path',{d:torsoPath,class:'torso-fill'}));
+ g.append(line(lShoulder.x-2,lShoulder.y+2,rHip.x+4,rHip.y+8,'gi-fold'));
+ g.append(line(lHip.x-12,lHip.y+7,rHip.x+13,rHip.y+7,'belt-line'));
+ g.append(svgLineBetween(rHip,rKnee,'pants-limb'));
+ g.append(svgLineBetween(rKnee,rFoot,strikeLeg?'strike-limb pants-limb':'pants-limb'));
+ g.append(svgLineBetween(rShoulder,rElbow,'skin-limb'));
+ g.append(svgLineBetween(rElbow,rHand,strikeArm?'strike-limb skin-limb':'skin-limb'));
+ g.append(svgLineBetween(lFoot,{x:lFoot.x-((pose==='run')?10:7),y:lFoot.y+3},'foot-limb'));
+ g.append(svgLineBetween(rFoot,{x:rFoot.x+((pose==='run')?10:7),y:rFoot.y+3},'foot-limb'));
+ const gloveR=(pose==='punch'||pose==='oneTwo'||pose==='hadouken')?5.9:5.2;
+ g.append(circle(lHand.x,lHand.y,gloveR,strikeArm?'strike-glove':'glove-fill'));
+ g.append(circle(rHand.x,rHand.y,gloveR,strikeArm?'strike-glove':'glove-fill'));
+ for(const pt of [lElbow,rElbow,lKnee,rKnee])g.append(circle(pt.x,pt.y,m.jointR||2.7,'joint-shadow'));
+ const head={x:torsoTop.x+(a.lean||0)*.12,y:(m.neck||-70)-18+bob};
+ g.append(circle(head.x,head.y,m.headR||11,'head-fill'));
+ g.append(el('path',{d:`M ${head.x-8} ${head.y-11} C ${head.x-3} ${head.y-18}, ${head.x+9} ${head.y-15}, ${head.x+12} ${head.y-9}`,class:'hair-line'}));
+}
+
 const poseFrame=(profile,pose)=>POSE_LIBRARY[profile]?.[pose]||POSE_LIBRARY[profile]?.idle||POSE_LIBRARY.default.idle;
 const lerp=(a,b,t)=>a+(b-a)*t;
 const ease=(t)=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
 function mixPose(a,b,t){const e=ease(clamp(t,0,1));const out={};for(const k of ['lean','hip','yShift'])out[k]=lerp(a[k]||0,b[k]||0,e);for(const limb of ['la','ra','ll','rl'])out[limb]=[lerp(a[limb][0],b[limb][0],e),lerp(a[limb][1],b[limb][1],e)];return out;}
 function keyframedPose(profile,pose,p){const frames=poseFrame(profile,pose);if(frames.length===1)return frames[0];const t=clamp(p,0,1);for(let i=0;i<frames.length-1;i++){const a=frames[i],b=frames[i+1];if(t>=a.t&&t<=b.t)return mixPose(a,b,(t-a.t)/Math.max(.001,b.t-a.t));}return frames[frames.length-1];}
-function loopProgress(pose){const d=state.dude;if(d.attack)return animProgress();if(pose==='idle')return ((d.poseAge||0)*1.35)%1;if(pose==='run')return ((d.poseAge||0)*4.2)%1;if(pose==='turn')return animProgress();return animProgress();}
->>>>>>> Stashed changes
+function poseProgressAt(pose,age){if(pose==='idle')return ((age||0)*1.35)%1;if(pose==='run')return ((age||0)*4.2)%1;if(pose==='turn')return animProgress();return animProgress();}
+function loopProgress(pose){const d=state.dude;if(d.attack)return animProgress();return poseProgressAt(pose,d.poseAge||0);}
 function poseAngles(pose,p,t){
- const walk=Math.sin(t/75), step=Math.cos(t/75), breathe=Math.sin(t/300);
- const two=state.dude.attack&&state.dude.attack.t>.30;
- const alley=currentFighterProfile==='alleyBrawler';
- const snap=p>.52;
- if(!alley){
-  const base={la:[142+breathe*4,154],ra:[28-breathe*3,36],ll:[112,76+breathe*2],rl:[68,104-breathe*2],lean:breathe*1.5,hip:breathe*1.2};
-  if(pose==='turn')return {la:[120,148],ra:[62,86],ll:[98,82],rl:[80,116],lean:-10+18*p,hip:-4+8*p};
-  if(pose==='run')return {la:[150+walk*14,152],ra:[28-walk*14,35],ll:[104-walk*22,72+walk*20],rl:[72+walk*22,110-walk*20],lean:5,hip:walk*3};
-  if(pose==='punch')return {la:[150,154],ra:[p<.72?-28:0,p<.72?18:0],ll:[108,74],rl:[70,105],lean:7};
-  if(pose==='oneTwo')return two?{la:[-8,0],ra:[145,160],ll:[84,96],rl:[60,124],lean:11,hip:8}:{la:[150,154],ra:[-5,2],ll:[112,72],rl:[66,104],lean:5};
-  if(pose==='kick')return {la:[150,154],ra:[24,42],ll:[112,76],rl:snap?[-14,-8]:[38,48],lean:-3};
-  if(pose==='sweep')return {la:[154,154],ra:[24,52],ll:[124,86],rl:[28,14],lean:7,hip:6};
-  if(pose==='uppercut')return {la:[154,154],ra:[-82,-98],ll:[108,74],rl:[70,105],lean:-7};
-  if(pose==='jumpKick')return {la:[156,152],ra:[24,46],ll:[140,170],rl:snap?[-12,-8]:[34,28],lean:2};
-  if(pose==='jump')return {la:[160,154],ra:[20,28],ll:[130,158],rl:[48,22],lean:0};
-  if(pose==='duck')return {la:[160,154],ra:[16,34],ll:[126,46],rl:[54,134],lean:10,hip:13};
-  if(pose==='block')return {la:[-88,-34],ra:[-118,-146],ll:[110,76],rl:[68,108],lean:3};
-  if(pose==='hurt')return {la:[170,168],ra:[8,16],ll:[116,82],rl:[72,112],lean:-8};
-  return base;
+ const profile=currentFighterProfile==='alleyBrawler'?'alleyBrawler':'default';
+ const poseName=POSE_LIBRARY[profile]?.[pose]?pose:'idle';
+ const current=keyframedPose(profile,poseName,loopProgress(pose));
+ const blend=state.dude.poseBlend;
+ if(blend&&blend.duration>0&&POSE_LIBRARY[profile]?.[blend.from]){
+  const from=keyframedPose(profile,blend.from,poseProgressAt(blend.from,blend.fromAge+(blend.age||0)));
+  return sanitizeLocomotionPose(poseName,mixPose(from,current,(blend.age||0)/blend.duration));
  }
-
- // Alley Brawler: exaggerated, left-to-right fighting-game style pose reads.
- const base={la:[-112+breathe*6,-145],ra:[-58-breathe*4,-104],ll:[114,64+breathe*4],rl:[56,126-breathe*4],lean:7+breathe*3,hip:breathe*2};
- if(pose==='turn')return {la:[-40,-74],ra:[-138,-166],ll:[84,94],rl:[78,128],lean:24-44*p,hip:16-26*p};
- if(pose==='run')return {
-  la:[-118+walk*34,-150+walk*8],
-  ra:[-42-walk*36,-88-walk*14],
-  ll:[96-walk*46,54+walk*34],
-  rl:[48+walk*46,138-walk*36],
-  lean:15+Math.max(0,step)*4,
-  hip:walk*10
- };
- if(pose==='punch')return p<.52
-  ?{la:[-130,-166],ra:[-58,-18],ll:[106,62],rl:[56,126],lean:17,hip:7}
-  :{la:[-118,-150],ra:[-20,8],ll:[104,62],rl:[54,122],lean:12,hip:5};
- if(pose==='oneTwo')return two
-  ?{la:[-38,-6],ra:[-150,-178],ll:[72,116],rl:[24,150],lean:28,hip:26}
-  :{la:[-132,-166],ra:[-46,-8],ll:[110,58],rl:[58,124],lean:15,hip:8};
- if(pose==='kick')return snap
-  ?{la:[-124,-156],ra:[-72,-108],ll:[122,88],rl:[-18,-8],lean:-14,hip:8}
-  :{la:[-118,-148],ra:[-70,-104],ll:[118,80],rl:[24,42],lean:-4,hip:4};
- if(pose==='sweep')return {la:[-88,-126],ra:[-44,-84],ll:[150,92],rl:[4,-2],lean:22,hip:18};
- if(pose==='uppercut')return p<.45
-  ?{la:[-126,-156],ra:[-44,-72],ll:[130,54],rl:[44,136],lean:22,hip:14}
-  :{la:[-112,-146],ra:[-96,-124],ll:[104,72],rl:[64,116],lean:-18,hip:4};
- if(pose==='jumpKick')return snap
-  ?{la:[-138,-162],ra:[-76,-112],ll:[158,178],rl:[-18,-8],lean:4,hip:10}
-  :{la:[-128,-152],ra:[-68,-104],ll:[136,164],rl:[24,18],lean:2,hip:6};
- if(pose==='jump')return {la:[-130,-154],ra:[-70,-112],ll:[142,168],rl:[42,18],lean:0,hip:4};
- if(pose==='duck')return {la:[-104,-140],ra:[-66,-108],ll:[138,42],rl:[46,146],lean:18,hip:18};
- if(pose==='block')return {la:[-70,-20],ra:[-118,-158],ll:[110,74],rl:[62,116],lean:8,hip:4};
- if(pose==='hadouken')return p<.45
-  ?{la:[-84,-118],ra:[-64,-104],ll:[124,72],rl:[54,128],lean:20,hip:14}
-  :{la:[-18,-4],ra:[-18,-4],ll:[112,66],rl:[48,130],lean:24,hip:18};
- if(pose==='hurt')return {la:[176,170],ra:[4,14],ll:[120,84],rl:[74,118],lean:-16,hip:-6};
- return base;
+ return sanitizeLocomotionPose(poseName,current);
 }
-<<<<<<< Updated upstream
-function drawDude(){const d=state.dude,g=UI.dude;g.innerHTML='';const profile=FIGHTER_PROFILES[currentFighterProfile]||FIGHTER_PROFILES.default;DUDE_MODEL.jointR=profile.joint;g.style.setProperty('--profile-line',profile.line);const now=performance.now();let y=d.y,bob=(d.pose==='run'||d.pose==='idle')?Math.sin(now/(d.pose==='run'?92:430))*(d.pose==='run'?2.5:1.6):0;if(d.pose==='jump'||d.pose==='jumpKick')y-=48;if(d.pose==='duck')y+=23;const p=phase(),oneTwoSecond=d.attack?.move==='oneTwo'&&d.attack.t>.30,lunge=d.pose==='oneTwo'?(oneTwoSecond?(currentFighterProfile==='alleyBrawler'?32:22):9)*p:(['punch','kick','sweep','uppercut','jumpKick','hadouken'].includes(d.pose)?11*p:0),hurt=d.pose==='hurt'?-8:0;const face=d.facing||1;g.setAttribute('transform',`translate(${d.x+face*(lunge+hurt)} ${y}) scale(${face} 1)`);
- if(d.pose==='dead'){const t=clamp(state.deathTimer/0.75,0,1),rot=82*t;g.setAttribute('transform',`translate(${d.x-8} ${y-8+18*t}) scale(${d.facing||1} 1) rotate(${rot})`);g.setAttribute('opacity',String(1-.25*t));g.append(circle(0,-82,DUDE_MODEL.headR,'dude-head'));g.append(line(0,-68,0,-14,'dude-line'));limbs(g,[[0,-54,-24,-43,'dude-line'],[0,-54,24,-43,'dude-line'],[0,-14,-28,22,'dude-line'],[0,-14,28,22,'dude-line']]);g.append(text(-30,-108,'DUDE'));return;}
- g.setAttribute('opacity','1');const a=poseAngles(d.pose,p,now),neckX=a.lean||0,hipX=a.hip||0,neckY=-70+bob,hipY=-12+bob+(a.hip?2:0);g.append(circle(neckX,-82+bob,DUDE_MODEL.headR,'dude-head'));g.append(line(neckX,neckY,hipX,hipY,'dude-line'));
- const ls=[neckX-5,neckY+15],rs=[neckX+5,neckY+15],lh=[hipX-4,hipY],rh=[hipX+4,hipY];
- chain(g,ls[0],ls[1],a.la[0],DUDE_MODEL.upperArm,a.la[1],DUDE_MODEL.foreArm,'dude-line',(d.pose==='oneTwo'&&a.la[0]<10)||d.pose==='hadouken'?'dude-line strike-limb':'dude-line');
- chain(g,rs[0],rs[1],a.ra[0],DUDE_MODEL.upperArm,a.ra[1],DUDE_MODEL.foreArm,'dude-line',['punch','oneTwo','uppercut','hadouken'].includes(d.pose)?'dude-line strike-limb':'dude-line');
- chain(g,lh[0],lh[1],a.ll[0],DUDE_MODEL.upperLeg,a.ll[1],DUDE_MODEL.lowerLeg,'dude-line','dude-line');
- chain(g,rh[0],rh[1],a.rl[0],DUDE_MODEL.upperLeg,a.rl[1],DUDE_MODEL.lowerLeg,'dude-line',['kick','sweep','jumpKick'].includes(d.pose)?'dude-line strike-limb':'dude-line');
-=======
-function drawDude(){const d=state.dude,g=UI.dude;g.innerHTML='';const profile=FIGHTER_PROFILES[currentFighterProfile]||FIGHTER_PROFILES.default;DUDE_MODEL=resolveDudeModel(currentFighterProfile);DUDE_MODEL.jointR=profile.joint;g.style.setProperty('--profile-line',profile.line);const now=performance.now();let y=d.y,bob=(d.pose==='run'||d.pose==='idle')?Math.sin(now/(d.pose==='run'?92:430))*(d.pose==='run'?2.5:1.6):0;if(d.pose==='jump'||d.pose==='jumpKick')y-=48;if(d.pose==='duck')y+=23;const p=animProgress(),strike=phase(),oneTwoSecond=d.attack?.move==='oneTwo'&&d.attack.t>.30,lunge=d.pose==='oneTwo'?(oneTwoSecond?(currentFighterProfile==='alleyBrawler'?34:22):11)*strike:(['punch','kick','sweep','uppercut','jumpKick','hadouken'].includes(d.pose)?13*strike:0),hurt=d.pose==='hurt'?-8:0;const face=d.facing||1;g.setAttribute('transform',`translate(${d.x+face*(lunge+hurt)} ${y}) scale(${face} 1)`);
- if(d.pose==='dead'){const t=clamp(state.deathTimer/0.75,0,1),rot=82*t;g.setAttribute('transform',`translate(${d.x-8} ${y-8+18*t}) scale(${d.facing||1} 1) rotate(${rot})`);g.setAttribute('opacity',String(1-.25*t));g.append(circle(0,-82,DUDE_MODEL.headR,'dude-head'));g.append(line(0,-68,0,-14,'dude-line'));limbs(g,[[0,-54,-24,-43,'dude-line'],[0,-54,24,-43,'dude-line'],[0,-14,-28,22,'dude-line'],[0,-14,28,22,'dude-line']]);/* Fighter name label hidden: SVG text mirrors on left-facing turns. */return;}
- g.setAttribute('opacity','1');const a=poseAngles(d.pose,p,now);y+=(a.yShift||0);g.setAttribute('transform',`translate(${d.x+face*(lunge+hurt)} ${y}) scale(${face} 1)`);const neckX=a.lean||0,hipX=a.hip||0,neckY=DUDE_MODEL.neck+bob,hipY=DUDE_MODEL.hip+bob+(a.hip?2:0);g.append(circle(neckX,DUDE_MODEL.neck-12+bob,DUDE_MODEL.headR,'dude-head'));g.append(line(neckX,neckY,hipX,hipY,'dude-line'));
- const ls=[neckX-DUDE_MODEL.shoulderW/2,neckY+15],rs=[neckX+DUDE_MODEL.shoulderW/2,neckY+15],lh=[hipX-DUDE_MODEL.hipW/2,hipY],rh=[hipX+DUDE_MODEL.hipW/2,hipY];
- armChain(g,ls[0],ls[1],a.la[0],a.la[1],-1,(d.pose==='oneTwo'&&a.la[0]<10)||d.pose==='hadouken');
- armChain(g,rs[0],rs[1],a.ra[0],a.ra[1],1,['punch','oneTwo','uppercut','hadouken'].includes(d.pose));
- legChain(g,lh[0],lh[1],a.ll[0],a.ll[1],-1,false);
- legChain(g,rh[0],rh[1],a.rl[0],a.rl[1],1,['kick','sweep','jumpKick'].includes(d.pose));
->>>>>>> Stashed changes
+function sanitizeLocomotionPose(poseName,a){
+ if(currentFighterProfile!=='alleyBrawler'||!['idle','run'].includes(poseName)) return a;
+ const safe={...a,la:[...a.la],ra:[...a.ra],ll:[...a.ll],rl:[...a.rl]};
+ // Runtime guardrail: these are permissive enough for the traced sheet poses, but prevent the old overhead windmill bug.
+ safe.la[0]=clamp(safe.la[0],70,135);
+ safe.ra[0]=clamp(safe.ra[0],24,70);
+ safe.la[1]=clamp(safe.la[1],-46,12);
+ safe.ra[1]=clamp(safe.ra[1],-42,12);
+ return safe;
+}
+function drawDude(){const d=state.dude,g=UI.dude;g.innerHTML='';const profile=FIGHTER_PROFILES[currentFighterProfile]||FIGHTER_PROFILES.default;DUDE_MODEL=resolveDudeModel(currentFighterProfile);DUDE_MODEL.jointR=profile.joint;g.style.setProperty('--profile-line',profile.line);g.setAttribute('class','fighter dude-fighter human-puppet');const now=performance.now();let y=d.y,bob=(d.pose==='run'||d.pose==='idle')?Math.sin(now/(d.pose==='run'?92:430))*(d.pose==='run'?2.5:1.6):0;if(d.pose==='jump'||d.pose==='jumpKick')y-=48;if(d.pose==='duck')y+=23;const p=animProgress(),strike=phase(),oneTwoSecond=d.attack?.move==='oneTwo'&&d.attack.t>.30,lunge=d.pose==='oneTwo'?(oneTwoSecond?(currentFighterProfile==='alleyBrawler'?34:22):11)*strike:(['punch','kick','sweep','uppercut','jumpKick','hadouken'].includes(d.pose)?13*strike:0),hurt=d.pose==='hurt'?-8:0;const face=d.facing||1;
+ if(d.pose==='dead'){const t=clamp(state.deathTimer/0.75,0,1),rot=82*t,a=poseAngles('dead',t,now);g.setAttribute('transform',`translate(${d.x-8} ${y-8+20*t+(a.yShift||0)}) scale(${d.facing||1} 1) rotate(${rot})`);g.setAttribute('opacity',String(1-.18*t));drawHumanPuppet(g,a,{bob:0,pose:'dead',progress:t});g.append(el('path',{d:'M-34 32 C-8 42 44 42 70 32',class:'run-dust soft'}));return;}
+ g.setAttribute('opacity','1');const a=poseAngles(d.pose,p,now);y+=(a.yShift||0);g.setAttribute('transform',`translate(${d.x+face*(lunge+hurt)} ${y}) scale(${face} 1)`);drawHumanPuppet(g,a,{bob,pose:d.pose,progress:p});
  if(d.pose==='block')g.append(el('path',{d:'M24 -78 C38 -68 39 -45 24 -34 C8 -45 9 -68 24 -78',class:'block-guard'}));
  if(d.pose==='hadouken')g.append(el('circle',{cx:86,cy:-63,r:10+8*p,class:'ki-orb'}));
  if(d.pose==='sweep')g.append(el('path',{d:'M18 34 C42 52 76 50 108 34',class:'sweep-arc'}));
- const atk=d.attack;if(atk?.showBox&&atk.hitBox){const hb=atk.hitBox;g.append(el('rect',{x:(d.facing||1)>=0?hb.x1-(d.x+lunge+hurt):d.x-(hb.x2)-lunge-hurt,y:hb.y1-y,width:hb.x2-hb.x1,height:hb.y2-hb.y1,class:'hitbox'}));} g.append(text(-30,-108,'DUDE'));}
-function drawEnemy(){const root=UI.enemy;root.innerHTML='';const foes=aliveEnemies();if(!foes.length)return;for(const e of foes){const g=el('g',{});root.append(g);const recoil=e.stagger>0?10*Math.sin(e.stagger*28):0;const eFace=e.x>=state.dude.x?1:-1;g.setAttribute('transform',`translate(${e.x+eFace*recoil} ${e.y}) scale(${eFace} 1)`);g.setAttribute('opacity',e.hitFlash>0?'.5':'1');g.setAttribute('class',`fighter enemy-fighter ${e.boss?'boss':''}`);const wind=e.attack?clamp(e.attack.t/e.attack.impact,0,1):0;if(e.kind==='drone'){g.append(el('rect',{x:-24,y:-13,width:48,height:26,rx:4,class:'enemy-fill'}));g.append(circle(-42,-18,8,'enemy-line'));g.append(circle(42,-18,8,'enemy-line'));if(e.attack){g.append(line(-20,0,-86+16*wind,6,'enemy-line attack-line'));g.append(line(20,0,-86+16*wind,6,'enemy-line attack-line'))}} if(e.kind==='crawler'){g.append(circle(0,-22,e.boss?23:16,'enemy-fill'));g.append(line(-18,-6,-50,20,'enemy-line'));g.append(line(0,-4,-18,24,'enemy-line'));g.append(line(18,-6,44,20,'enemy-line'));if(e.attack)g.append(line(-18,-8,-88+24*wind,-22,'enemy-line attack-line'));} if(e.kind==='dummy'){const top=-70,bottom=e.lanes.includes('lower')?38:8;g.append(circle(0,top,14,'enemy-fill'));g.append(line(0,top+14,0,bottom-14,'enemy-line'));g.append(line(0,-42,-30,-15,'enemy-line'));g.append(line(0,-42,30,-15,'enemy-line'));g.append(line(0,bottom-14,-28,bottom+12,'enemy-line'));g.append(line(0,bottom-14,28,bottom+12,'enemy-line'));if(e.attack)g.append(line(-8,-38,-86+20*wind,-42,'enemy-line attack-line'));} if(e.kind==='turret'){g.append(el('rect',{x:-34,y:-42,width:68,height:60,rx:8,class:'enemy-fill'}));g.append(circle(-20,28,12,'enemy-line'));g.append(circle(20,28,12,'enemy-line'));if(e.attack)g.append(line(-30,-16,-96+24*wind,44,'enemy-line attack-line'));} if(e===state.enemy)g.append(text(-64,e.lanes.length>1?-92:-48,`${e.name} [${e.lanes.map(l=>LANE_LABEL[l]).join('+')}]`));}}
+ if(d.pose==='run'){const footP=loopProgress('run');const dustY=34+bob;g.append(el('path',{d:`M${-44-12*Math.sin(footP*Math.PI*2)} ${dustY} C -68 ${dustY+4}, -78 ${dustY+2}, -92 ${dustY+7}`,class:'run-dust'}));g.append(el('path',{d:`M${-24-8*Math.cos(footP*Math.PI*2)} ${dustY+10} C -46 ${dustY+13}, -58 ${dustY+12}, -72 ${dustY+16}`,class:'run-dust soft'}));}
+ const atk=d.attack;if(atk?.showBox&&atk.hitBox){const hb=atk.hitBox;g.append(el('rect',{x:(d.facing||1)>=0?hb.x1-(d.x+lunge+hurt):d.x-(hb.x2)-lunge-hurt,y:hb.y1-y,width:hb.x2-hb.x1,height:hb.y2-hb.y1,class:'hitbox'}));}
+}
+function drawEnemy(){const root=UI.enemy;root.innerHTML='';const foes=aliveEnemies();if(!foes.length)return;for(const e of foes){const g=el('g',{});root.append(g);const recoil=e.stagger>0?10*Math.sin(e.stagger*28):0;const eFace=e.x>=state.dude.x?1:-1;g.setAttribute('transform',`translate(${e.x+eFace*recoil} ${e.y}) scale(${eFace} 1)`);g.setAttribute('opacity',e.hitFlash>0?'.5':'1');g.setAttribute('class',`fighter enemy-fighter ${e.boss?'boss':''}`);const wind=e.attack?clamp(e.attack.t/e.attack.impact,0,1):0;if(e.kind==='drone'){g.append(el('rect',{x:-24,y:-13,width:48,height:26,rx:4,class:'enemy-fill'}));g.append(circle(-42,-18,8,'enemy-line'));g.append(circle(42,-18,8,'enemy-line'));if(e.attack){g.append(line(-20,0,-86+16*wind,6,'enemy-line attack-line'));g.append(line(20,0,-86+16*wind,6,'enemy-line attack-line'))}} if(e.kind==='crawler'){g.append(circle(0,-22,e.boss?23:16,'enemy-fill'));g.append(line(-18,-6,-50,20,'enemy-line'));g.append(line(0,-4,-18,24,'enemy-line'));g.append(line(18,-6,44,20,'enemy-line'));if(e.attack)g.append(line(-18,-8,-88+24*wind,-22,'enemy-line attack-line'));} if(e.kind==='dummy'){const top=-70,bottom=e.lanes.includes('lower')?38:8;g.append(circle(0,top,14,'enemy-fill'));g.append(line(0,top+14,0,bottom-14,'enemy-line'));g.append(line(0,-42,-30,-15,'enemy-line'));g.append(line(0,-42,30,-15,'enemy-line'));g.append(line(0,bottom-14,-28,bottom+12,'enemy-line'));g.append(line(0,bottom-14,28,bottom+12,'enemy-line'));if(e.attack)g.append(line(-8,-38,-86+20*wind,-42,'enemy-line attack-line'));} if(e.kind==='turret'){g.append(el('rect',{x:-34,y:-42,width:68,height:60,rx:8,class:'enemy-fill'}));g.append(circle(-20,28,12,'enemy-line'));g.append(circle(20,28,12,'enemy-line'));if(e.attack)g.append(line(-30,-16,-96+24*wind,44,'enemy-line attack-line'));} /* Enemy SVG label hidden: HUD/enemy meters already identify the target, and mirrored text looked silly on left attacks. */}}
 function drawFx(){UI.fx.innerHTML='';for(const f of state.fx){const k=f.t/f.max;if(f.kind==='text'){const n=text(f.x,f.y-(1-k)*22,String(f.label),'damage-text');n.setAttribute('opacity',k);UI.fx.append(n);continue;}const r=36*(1-k)+5;UI.fx.append(el('circle',{cx:f.x,cy:f.y,r,fill:'none',stroke:f.kind==='dodge'?'#52a9ff':'#f4c95d','stroke-width':4,opacity:k}));UI.fx.append(line(f.x-r*.7,f.y-r*.7,f.x+r*.7,f.y+r*.7,'spark-line'));UI.fx.append(line(f.x-r*.7,f.y+r*.7,f.x+r*.7,f.y-r*.7,'spark-line'));}}
 function draw(){drawEnemy();drawDude();drawFx();}
 const pct=(a,b)=>clamp(a/b*100,0,100);
@@ -309,5 +365,5 @@ function autoPickMove(){if(state.pendingChoices?.length)selectMove(sample(state.
 function applyInfluence(action){if(state.awaitingChoice||!state.running)return;if(action==='cheer'){state.dude.punchPower+=1;state.dude.kickPower+=1;if(profileHasKi())state.resources.X=Math.min(state.resources.XMax,state.resources.X+8);pushLog(profileHasKi()?'Cheer adds Punch/Kick +1 and sparks Ki.':'Cheer adds Punch/Kick +1.')} if(action==='heal'){state.dude.hp=Math.min(state.dude.maxHp,state.dude.hp+16);pushLog('Second Wind restores 16 Fortitude.')} if(action==='weaken'){state.enemy.power=Math.max(1,state.enemy.power-2);pushLog(`${state.enemy.name} loses 2 power.`)}}
 function bind(){UI.pauseBtn.onclick=()=>{if(!state.defeated&&state.dude.hp>0)state.running=!state.running};UI.speedBtn.onclick=()=>{state.speed=state.speed===1?2:state.speed===2?4:1};UI.restartBtn.onclick=()=>{state=createInitialState();setFighterProfile(currentFighterProfile,{silent:true})};UI.autoPickBtn.onclick=autoPickMove;UI.autoPowerToggle.onchange=()=>{state.autoPower=UI.autoPowerToggle.checked;pushLog(`Auto-pick powers ${state.autoPower?'enabled':'disabled'}.`)};UI.manualToggle.onchange=()=>{state.manual=UI.manualToggle.checked;pushLog(`Manual input ${state.manual?'enabled':'disabled'}.`)};UI.manualControls.querySelectorAll('[data-move]').forEach(b=>b.onclick=()=>performDudeAction(b.dataset.move));if(UI.fighterProfileSelect)UI.fighterProfileSelect.onchange=()=>setFighterProfile(UI.fighterProfileSelect.value);document.querySelectorAll('.influence-btn').forEach(b=>b.onclick=()=>applyInfluence(b.dataset.action));document.addEventListener('keydown',e=>{if(state.awaitingChoice){if(e.key==='1'&&state.pendingChoices[0])selectMove(state.pendingChoices[0]);if(e.key==='2'&&state.pendingChoices[1])selectMove(state.pendingChoices[1]);if(e.key==='3'&&state.pendingChoices[2])selectMove(state.pendingChoices[2]);if(e.key.toLowerCase()==='a')autoPickMove();return;} const k=e.key.toLowerCase(); if(state.manual){const keys={'1':'punch','2':'oneTwo','3':'kick','4':'sweep','5':'uppercut','6':'jumpKick',j:'jump',k:'duck',l:'block'}; if(profileHasKi())keys['7']='hadouken'; if(keys[k]){performDudeAction(keys[k]);return;}} if(k==='q')applyInfluence('cheer'); if(k==='w')applyInfluence('heal'); if(k==='e')applyInfluence('weaken');});}
 function loop(ts){const dt=Math.min(.05,(ts-lastTs)/1000)*state.speed;lastTs=ts;update(dt);render();requestAnimationFrame(loop)}
-function boot(){assertUI();initBackground();bind();setFighterProfile(currentFighterProfile,{silent:true});render();requestAnimationFrame(loop)}
+function boot(){console.info('IdleFist animation build:', ANIM_BUILD_TAG);assertUI();initBackground();bind();setFighterProfile(currentFighterProfile,{silent:true});render();requestAnimationFrame(loop)}
 try{boot()}catch(err){showBootError(err)}
